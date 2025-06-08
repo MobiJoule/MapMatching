@@ -3,23 +3,30 @@ package de.geoinfoBonn.graphLibrary.mapMatching.matching;
 import java.awt.geom.Point2D;
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.logging.Logger;
+import org.tinylog.Logger;
 import java.util.stream.IntStream;
 
-import org.geotools.data.DataStore;
-import org.geotools.data.DataStoreFinder;
-import org.geotools.data.FeatureSource;
-import org.geotools.data.shapefile.ShapefileDumper;
-import org.geotools.feature.DefaultFeatureCollection;
+import org.geotools.api.data.*;
+import org.geotools.api.feature.type.PropertyDescriptor;
+import org.geotools.api.filter.Filter;
+import org.geotools.api.referencing.ReferenceIdentifier;
+import org.geotools.data.DefaultTransaction;
+import org.geotools.data.collection.ListFeatureCollection;
+import org.geotools.data.simple.SimpleFeatureCollection;
+import org.geotools.data.simple.SimpleFeatureIterator;
+import org.geotools.data.store.ReprojectingFeatureCollection;
 import org.geotools.feature.FeatureCollection;
 import org.geotools.feature.FeatureIterator;
 import org.geotools.feature.simple.SimpleFeatureBuilder;
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder;
 import org.geotools.geometry.jts.JTSFactoryFinder;
+import org.geotools.geopkg.FeatureEntry;
+import org.geotools.geopkg.GeoPackage;
+import org.geotools.referencing.CRS;
 import org.geotools.referencing.crs.DefaultGeographicCRS;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Geometry;
@@ -27,22 +34,41 @@ import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.LineString;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.impl.CoordinateArraySequence;
-import org.opengis.feature.simple.SimpleFeature;
-import org.opengis.feature.simple.SimpleFeatureType;
-import org.opengis.filter.Filter;
-import org.opengis.referencing.crs.CoordinateReferenceSystem;
+import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
+import org.geotools.api.feature.simple.SimpleFeature;
+import org.geotools.api.feature.simple.SimpleFeatureType;
+
+import javax.sql.DataSource;
 
 public class Track {
 
-	private static final Logger logger = Logger.getLogger(Track.class.getName());
+	private final long id;
+	private final int subtrack;
+	private final Integer section;
+	private final Long type;
+	private final ArrayList<Point2D> trackPoints;
 
-	private String id;
-	private int subtrack;
-	private ArrayList<Point2D> trackPoints;
-
-	public Track(String id, int subtrack, ArrayList<Point2D> trackPoints) {
+	public Track(long id, int subtrack, ArrayList<Point2D> trackPoints) {
 		this.id = id;
 		this.subtrack = subtrack;
+		this.section = null;
+		this.type = null;
+		this.trackPoints = trackPoints;
+	}
+
+	public Track(long id, int subtrack, int section, ArrayList<Point2D> trackPoints) {
+		this.id = id;
+		this.subtrack = subtrack;
+		this.section = section;
+		this.type = null;
+		this.trackPoints = trackPoints;
+	}
+
+	public Track(long id, int subtrack, int section, Long type, ArrayList<Point2D> trackPoints) {
+		this.id = id;
+		this.subtrack = subtrack;
+		this.section = section;
+		this.type = type;
 		this.trackPoints = trackPoints;
 	}
 
@@ -50,7 +76,7 @@ public class Track {
 		return trackPoints;
 	}
 
-	public String getId() {
+	public long getId() {
 		return id;
 	}
 
@@ -63,7 +89,7 @@ public class Track {
 	}
 
 	public static ArrayList<Track> importFromShapefile(String filename, String nameColumn) {
-		ArrayList<Track> trajectories = new ArrayList<Track>();
+		ArrayList<Track> trajectories = new ArrayList<>();
 		try {
 			if (filename.endsWith(".shp")) {
 				File shpfile = new File(filename);
@@ -77,14 +103,15 @@ public class Track {
 				Filter filter = Filter.INCLUDE; // ECQL.toFilter("BBOX(THE_GEOM, 10,20,30,40)")
 
 				FeatureCollection<SimpleFeatureType, SimpleFeature> myFeatureCollection = source.getFeatures(filter);
+
+				long i = 0;
 				try (FeatureIterator<SimpleFeature> features = myFeatureCollection.features()) {
 					while (features.hasNext()) {
 						SimpleFeature myFeature = features.next();
-						String id = nameColumn != null ? (String) myFeature.getAttribute(nameColumn)
-								: myFeature.getID();
+						long id = nameColumn != null ? (long) myFeature.getAttribute(nameColumn) : i;
 						Geometry myGeometry = (Geometry) myFeature.getDefaultGeometry();
 						if (myGeometry.getGeometryType().equals("LineString")) {
-							ArrayList<Point2D> points = new ArrayList<Point2D>();
+							ArrayList<Point2D> points = new ArrayList<>();
 							Coordinate[] xyz = myGeometry.getCoordinates();
 							for (int j = 0; j < xyz.length; j++) {
 								Point2D p = new Point2D.Double(xyz[j].x, xyz[j].y);
@@ -94,7 +121,7 @@ public class Track {
 						} else if (myGeometry.getGeometryType().equals("MultiLineString")) {
 							for (int geoIndex = 0; geoIndex < myGeometry.getNumGeometries(); geoIndex++) {
 								Geometry myGeometryPart = myGeometry.getGeometryN(geoIndex);
-								ArrayList<Point2D> points = new ArrayList<Point2D>();
+								ArrayList<Point2D> points = new ArrayList<>();
 								Coordinate[] xyz = myGeometryPart.getCoordinates();
 								for (int j = 0; j < xyz.length; j++) {
 									Point2D p = new Point2D.Double(xyz[j].x, xyz[j].y);
@@ -103,9 +130,10 @@ public class Track {
 								trajectories.add(new Track(id, geoIndex, points));
 							}
 						} else {
-							logger.warning(
+							Logger.warn(
 									"The shapefile does not contain a polyline but a " + myGeometry.getGeometryType());
 						}
+						i++;
 					}
 				} catch (Exception ex) {
 					throw new RuntimeException(ex);
@@ -120,58 +148,109 @@ public class Track {
 
 	}
 
-	public static void writeToShapeFile(File outputFile, ArrayList<Track> paths, ArrayList<Integer> subtrackIds,
-			ArrayList<String> types, CoordinateReferenceSystem crs) {
-		Track.writeToShapeFile(outputFile.getParentFile(), outputFile.getName(), paths, subtrackIds, types, crs);
-	}
-
-	public static void writeToShapeFile(File outputDir, String filename, ArrayList<Track> paths,
-			ArrayList<Integer> subtrackIds, ArrayList<String> types, CoordinateReferenceSystem crs) {
+	public static void writeToGpkg(GeoPackage out, String description, ArrayList<Track> paths,
+								   boolean withSectionIds, boolean withTypes, CoordinateReferenceSystem crs) {
 
 		long starttime = System.currentTimeMillis();
-		SimpleFeatureType featureType = Track.createFeatureType(subtrackIds != null, types != null, crs);
-		DefaultFeatureCollection collection = Track.createFeatureCollection(featureType, paths, subtrackIds, types);
+		SimpleFeatureType featureType = Track.createFeatureType(description, withSectionIds, withTypes, crs);
+		SimpleFeatureCollection collection = Track.createFeatureCollection(featureType, paths, withSectionIds, withTypes);
 		if (collection.isEmpty()) {
-			logger.warning("Empty collection! Skipping " + filename + "!");
+			Logger.warn("Empty collection! Skipping " + description + "!");
 			return;
 		}
-		Track.writeToFile(outputDir, filename, featureType, collection);
+		collection = forceXY(collection);
 
-		logger.info(
-				"Tracks written to " + filename + " in " + (System.currentTimeMillis() - starttime) / 1000.0 + "s.");
-	}
-
-	private static void writeToFile(File outputDir, String filename, SimpleFeatureType featureType,
-			DefaultFeatureCollection collection) {
 		try {
-			ShapefileDumper dumper = new ShapefileDumper(outputDir);
-			// optiona, set a target charset
-			dumper.setCharset(Charset.forName("UTF-8"));
-			// split when shp or dbf reaches 100MB
-			int maxSize = 100 * 1024 * 1024;
-			dumper.setMaxDbfSize(maxSize);
-			// actually dump data
-			dumper.dump(filename, collection);
+
+			FeatureEntry entry = out.feature(description);
+			if(entry == null) {
+				entry = new FeatureEntry();
+				entry.setDescription(description);
+				entry.setBounds(collection.getBounds());
+				out.create(entry, collection.getSchema());
+			} else {
+				entry.getBounds().expandToInclude(collection.getBounds());
+			}
+
+			// Write (new) features
+			Transaction tx = new DefaultTransaction();
+			try {
+				try (SimpleFeatureWriter w = out.writer(entry, true, null, tx);
+					 SimpleFeatureIterator it = collection.features()) {
+					while (it.hasNext()) {
+						SimpleFeature f = it.next();
+						SimpleFeature g = w.next();
+						g.setAttributes(f.getAttributes());
+						for (PropertyDescriptor pd : collection.getSchema().getDescriptors()) {
+							/* geopkg spec requires booleans to be stored as SQLite integers this fixes
+							 * bug reported by GEOT-5904 */
+							String name = pd.getName().getLocalPart();
+							if (pd.getType().getBinding() == Boolean.class) {
+								int bool = 0;
+								if (f.getAttribute(name) != null) {
+									bool = (Boolean) (f.getAttribute(name)) ? 1 : 0;
+								}
+								g.setAttribute(name, bool);
+							}
+						}
+						w.write();
+					}
+				}
+				tx.commit();
+			} catch (Exception ex) {
+				tx.rollback();
+				throw new IOException(ex);
+			} finally {
+				tx.close();
+			}
+
 		} catch (IOException e) {
-			logger.severe("Error writing shape.");
-			e.printStackTrace();
+			out.close();
+			throw new RuntimeException(e);
 		}
+
+		Logger.info(
+				description + " written in " + (System.currentTimeMillis() - starttime) / 1000.0 + "s.");
 	}
 
-	private static DefaultFeatureCollection createFeatureCollection(SimpleFeatureType featureType,
-			ArrayList<Track> paths, ArrayList<Integer> subtrackIds, ArrayList<String> types) {
+	static SimpleFeatureCollection forceXY(SimpleFeatureCollection fc) {
+		CoordinateReferenceSystem sourceCRS = fc.getSchema().getCoordinateReferenceSystem();
+		if ((CRS.getAxisOrder(sourceCRS) == CRS.AxisOrder.EAST_NORTH)
+				|| (CRS.getAxisOrder(sourceCRS) == CRS.AxisOrder.INAPPLICABLE)) {
+			return fc;
+		}
+
+		for (ReferenceIdentifier identifier : sourceCRS.getIdentifiers()) {
+			try {
+				String _identifier = identifier.toString();
+				CoordinateReferenceSystem flippedCRS = CRS.decode(_identifier, true);
+				if (CRS.getAxisOrder(flippedCRS) == CRS.AxisOrder.EAST_NORTH) {
+					ReprojectingFeatureCollection result = new ReprojectingFeatureCollection(fc, flippedCRS);
+					return result;
+				}
+			} catch (Exception e) {
+				// couldn't flip - try again
+			}
+		}
+		return fc;
+	}
+
+
+
+	private static ListFeatureCollection createFeatureCollection(SimpleFeatureType featureType,
+																 ArrayList<Track> paths, boolean withSubtrackIds, boolean withTypes) {
 		long starttime = System.currentTimeMillis();
 
-		DefaultFeatureCollection collection = new DefaultFeatureCollection();
+
+		List<SimpleFeature> featureList = new ArrayList<>();
 		GeometryFactory gf = JTSFactoryFinder.getGeometryFactory(null);
 		SimpleFeatureBuilder featureBuilder = new SimpleFeatureBuilder(featureType);
 
-		int pathIndex = 0;
 		for (Track path : paths) {
-			if (path.length() < 100) {
-				logger.warning("track " + path + " is shorter than 100m, skipping export");
-				continue;
-			}
+//			if (path.length() < 100) {
+//				//logger.warning("track " + path + " is shorter than 100m, skipping export");
+//				continue;
+//			}
 			CoordinateArraySequence seq = new CoordinateArraySequence(path.trackPoints.size());
 			int i = 0;
 			for (Point2D p : path.trackPoints) {
@@ -184,47 +263,43 @@ public class Track {
 			featureBuilder.add(ls);
 			featureBuilder.add(path.getId());
 			featureBuilder.add(path.getSubtrack());
-			if (subtrackIds != null) {
-				featureBuilder.add(subtrackIds.get(pathIndex));
+			if (withSubtrackIds) {
+				featureBuilder.add(path.getSection());
 			}
-			if (types != null) {
-				featureBuilder.add(types.get(pathIndex));
+			if (withTypes) {
+				featureBuilder.add(path.getType());
 			}
 
-			SimpleFeature feature = featureBuilder.buildFeature(null);
-			collection.add(feature);
-			pathIndex++;
+			featureList.add(featureBuilder.buildFeature(null));
 		}
 
-		logger.finest("FeatureCollection created in " + (System.currentTimeMillis() - starttime) / 1000.0 + "s.");
-		return collection;
+		Logger.debug("FeatureCollection created in " + (System.currentTimeMillis() - starttime) / 1000.0 + "s.");
+		return new ListFeatureCollection(featureType, featureList);
 	}
 
-	private static SimpleFeatureType createFeatureType(boolean withSubtrackId, boolean withType,
-			CoordinateReferenceSystem crs) {
-		long starttime = System.currentTimeMillis();
+	private static SimpleFeatureType createFeatureType(String description, boolean withSubtrackId, boolean withType,
+													   CoordinateReferenceSystem crs) {
 
 		SimpleFeatureTypeBuilder builder = new SimpleFeatureTypeBuilder();
-		builder.setName("Location");
-		if (crs == null)
+		builder.setName(description);
+		if (crs == null) {
+			Logger.warn("Printing tracks with default coordinate reference system WGS84");
 			builder.setCRS(DefaultGeographicCRS.WGS84); // <- Default Coordinate reference system
-		else
+		} else {
 			builder.setCRS(crs); // <- Coordinate reference system
+		}
 
 		// add attributes in order
 		builder.add("the_geom", LineString.class);
-		builder.add("track", String.class);
+		builder.add("track", Long.class);
 		builder.add("sid", Integer.class);
 		if (withSubtrackId)
 			builder.add("subtrack", Integer.class);
 		if (withType)
-			builder.length(64).add("type", String.class); // <- 15 chars width for name field
+			builder.add("type", Long.class);
 
 		// build the type
-		final SimpleFeatureType LOCATION = builder.buildFeatureType();
-
-		logger.finest("FeatureType created in " + (System.currentTimeMillis() - starttime) / 1000.0 + "s.");
-		return LOCATION;
+		return builder.buildFeatureType();
 	}
 
 	public LineString getSegment(Point p, Point q, GeometryFactory gf) {
@@ -245,5 +320,14 @@ public class Track {
 		return IntStream.range(0, trackPoints.size() - 1)//
 				.mapToDouble(i -> trackPoints.get(i).distance(trackPoints.get(i + 1)))//
 				.sum();
+	}
+
+	public int getSection() {
+		assert section != null;
+		return section;
+	}
+
+	public Long getType() {
+		return type;
 	}
 }

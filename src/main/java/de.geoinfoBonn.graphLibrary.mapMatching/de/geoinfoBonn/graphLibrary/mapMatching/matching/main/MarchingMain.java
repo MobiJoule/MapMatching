@@ -2,14 +2,13 @@ package de.geoinfoBonn.graphLibrary.mapMatching.matching.main;
 
 import java.awt.geom.Point2D;
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 import java.util.logging.Logger;
 
-import org.opengis.referencing.crs.CoordinateReferenceSystem;
+import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 
 import de.geoinfoBonn.graphLibrary.core.generic.DiGraph;
 import de.geoinfoBonn.graphLibrary.core.generic.DiGraph.DiGraphArc;
@@ -85,27 +84,21 @@ public class MarchingMain extends AbstractMain {
 		String weightColName = containsOptionalArg(args, "-l") ? getOptionalArg(args, "-l") : null;
 
 		// load network and trajectory data
-		LinkedList<Road<EdgeType>> roads = RoadReader.importFromShapefile(args[0], f -> EdgeType.ROAD, weightColName);
+		LinkedList<Road<EdgeType>> roads = RoadReader.importFromGpkg(args[0], f -> EdgeType.ROAD, weightColName,null);
 		DiGraph<Point2D, DoubleWeightDataWithInfo<EdgeType>> g = Road.buildGraph(roads);
 		ArrayList<Track> trajectories = Track.importFromShapefile(args[1], "gpsies_id");
 		logger.info("Number of trajectories in input file: " + trajectories.size());
 
 		CoordinateReferenceSystem crs = null;
-		try {
-			crs = RoadReader.readCRS(args[1].split("\\.")[0] + ".prj");
-		} catch (FileNotFoundException e) {
-			logger.warning(
-					"Could not read coordinate reference system of input. No .prj file found. Defaulting to WGS84.");
-		}
+		crs = RoadReader.readCRS(args[1].split("\\.")[0] + ".prj");
+
 
 		ArrayList<Track> paths = new ArrayList<>();
 		ArrayList<Track> matches = new ArrayList<>();
 		ArrayList<Track> chunks = new ArrayList<>();
-		ArrayList<Integer> chunkIds = new ArrayList<>();
 		ArrayList<Track> chunkPaths = new ArrayList<>();
 		ArrayList<Track> globalPaths = new ArrayList<>();
 		ArrayList<Track> segments = new ArrayList<>();
-		ArrayList<Integer> segmentIds = new ArrayList<>();
 
 		Marching<EdgeType> m = new Marching<>(g, e -> e);
 		m.setVariant(variant);
@@ -131,8 +124,7 @@ public class MarchingMain extends AbstractMain {
 				ArrayList<Point2D> segment = new ArrayList<Point2D>();
 				segment.add(arc.getSource().getNodeData());
 				segment.add(arc.getTarget().getNodeData());
-				segments.add(new Track(track.getId(), track.getSubtrack(), segment));
-				segmentIds.add(segmentCounter++);
+				segments.add(new Track(track.getId(), track.getSubtrack(),segmentCounter++, segment));
 			}
 
 			ArrayList<Point2D> track_matchedPoints = extractPointsFromPath(m.getMatches());
@@ -145,8 +137,7 @@ public class MarchingMain extends AbstractMain {
 
 			int chunkCounter = 1;
 			for (ArrayList<DiGraphNode<Point2D, DoubleWeightDataWithInfo<EdgeType>>> chunk : m.getChunks()) {
-				chunks.add(new Track(track.getId(), track.getSubtrack(), extractPointsFromPath(chunk)));
-				chunkIds.add(chunkCounter++);
+				chunks.add(new Track(track.getId(), track.getSubtrack(),chunkCounter++, extractPointsFromPath(chunk)));
 			}
 			for (List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<EdgeType>>> chunkPath : m
 					.getShortestPathsForChunks()) {
@@ -164,16 +155,14 @@ public class MarchingMain extends AbstractMain {
 
 			if (!exportSingleFiles) {
 				exportResults(args, outputDir, Optional.of(track.getId() + "_"), Optional.empty(), crs, paths, matches,
-						chunkIds, chunks, chunkPaths, globalPaths, segmentIds, segments);
+						chunks, chunkPaths, globalPaths, segments);
 
 				paths = new ArrayList<>();
 				matches = new ArrayList<>();
 				chunks = new ArrayList<>();
-				chunkIds = new ArrayList<>();
 				chunkPaths = new ArrayList<>();
 				globalPaths = new ArrayList<>();
 				segments = new ArrayList<>();
-				segmentIds = new ArrayList<>();
 			}
 
 		}
@@ -181,38 +170,35 @@ public class MarchingMain extends AbstractMain {
 		logger.info("Writing results to shapefiles...");
 
 		if (exportSingleFiles)
-			exportResults(args, outputDir, Optional.empty(), Optional.empty(), crs, paths, matches, chunkIds, chunks,
-					chunkPaths, globalPaths, segmentIds, segments);
+			exportResults(args, outputDir, Optional.empty(), Optional.empty(), crs, paths, matches, chunks,
+					chunkPaths, globalPaths, segments);
 
 		logger.info("Finished.");
 	}
 
 	public static void exportResults(String[] args, File outputDir, Optional<String> prefix, Optional<String> suffix,
-			CoordinateReferenceSystem crs, ArrayList<Track> paths, ArrayList<Track> matches,
-			ArrayList<Integer> chunkIds, ArrayList<Track> chunks, ArrayList<Track> chunkPaths,
-			ArrayList<Track> globalPaths, ArrayList<Integer> segmentIds, ArrayList<Track> segments) {
-		Track.writeToShapeFile(outputDir, prefix.orElse("") + "paths" + suffix.orElse(""), paths, null, null, crs);
-
-		// Optional outputs
-		if (containsOptionalArg(args, "-ma"))
-			Track.writeToShapeFile(outputDir, prefix.orElse("") + "matches" + suffix.orElse(""), matches, null, null,
-					crs);
-
-		if (containsOptionalArg(args, "-ch")) // each section of the input that could be matched onto roads
-			Track.writeToShapeFile(outputDir, prefix.orElse("") + "chunks" + suffix.orElse(""), chunks, chunkIds, null,
-					crs);
-
-		if (containsOptionalArg(args, "-chp"))
-			Track.writeToShapeFile(outputDir, prefix.orElse("") + "chunkPaths" + suffix.orElse(""), chunkPaths,
-					chunkIds, null, crs);
-
-		if (containsOptionalArg(args, "-gp"))
-			Track.writeToShapeFile(outputDir, prefix.orElse("") + "globalPaths" + suffix.orElse(""), globalPaths, null,
-					null, crs);
-
-		if (containsOptionalArg(args, "-s"))
-			Track.writeToShapeFile(outputDir, prefix.orElse("") + "segments" + suffix.orElse(""), segments, segmentIds,
-					null, crs);
+									 CoordinateReferenceSystem crs, ArrayList<Track> paths, ArrayList<Track> matches,
+									 ArrayList<Track> chunks, ArrayList<Track> chunkPaths,
+									 ArrayList<Track> globalPaths, ArrayList<Track> segments) {
+//		Track.writeToGpkg(outputDir, prefix.orElse("") + "paths" + suffix.orElse(""), paths, false, false, crs);
+//
+//		// Optional outputs
+//		if (containsOptionalArg(args, "-ma"))
+//			Track.writeToGpkg(outputDir, prefix.orElse("") + "matches" + suffix.orElse(""), matches, false, false,
+//					crs);
+//
+//		if (containsOptionalArg(args, "-ch")) // each section of the input that could be matched onto roads
+//			Track.writeToGpkg(outputDir, prefix.orElse("") + "chunks" + suffix.orElse(""), chunks, true, false,
+//					crs);
+//
+//		if (containsOptionalArg(args, "-chp"))
+//			Track.writeToGpkg(outputDir, prefix.orElse("") + "chunkPaths" + suffix.orElse(""), chunkPaths, true, false, crs);
+//
+//		if (containsOptionalArg(args, "-gp"))
+//			Track.writeToGpkg(outputDir, prefix.orElse("") + "globalPaths" + suffix.orElse(""), globalPaths, false, false, crs);
+//
+//		if (containsOptionalArg(args, "-s"))
+//			Track.writeToGpkg(outputDir, prefix.orElse("") + "segments" + suffix.orElse(""), segments, false,  false, crs);
 	}
 
 	public static ArrayList<Point2D> extractPointsFromPath(

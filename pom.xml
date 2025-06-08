@@ -1,6 +1,6 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+		 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+		 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 
 	<artifactId>gl-mapMatching</artifactId>
@@ -15,6 +15,8 @@
 
 	<properties>
 		<project.build.sourceEncoding>ISO-8859-1</project.build.sourceEncoding>
+		<geotools.version>33.1</geotools.version>
+		<tinylog.version>2.7.0</tinylog.version>
 	</properties>
 
 	<dependencies>
@@ -32,38 +34,45 @@
 		<dependency>
 			<groupId>org.geotools</groupId>
 			<artifactId>gt-main</artifactId>
-		</dependency>
-
-		<dependency>
-			<groupId>org.geotools</groupId>
-			<artifactId>gt-opengis</artifactId>
+			<version>${geotools.version}</version>
 		</dependency>
 
 		<dependency>
 			<groupId>org.geotools</groupId>
 			<artifactId>gt-referencing</artifactId>
+			<version>${geotools.version}</version>
 		</dependency>
 
 		<dependency>
 			<groupId>org.geotools</groupId>
 			<artifactId>gt-shapefile</artifactId>
+			<version>${geotools.version}</version>
 		</dependency>
-
+		<dependency>
+			<groupId>org.geotools</groupId>
+			<artifactId>gt-geopkg</artifactId>
+			<version>${geotools.version}</version>
+		</dependency>
 		<dependency>
 			<groupId>org.geotools</groupId>
 			<artifactId>gt-epsg-hsql</artifactId>
+			<version>${geotools.version}</version>
 			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.tinylog</groupId>
+			<artifactId>tinylog-api</artifactId>
+			<version>${tinylog.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.tinylog</groupId>
+			<artifactId>tinylog-impl</artifactId>
+			<version>${tinylog.version}</version>
 		</dependency>
 	</dependencies>
 
 	<build>
 		<sourceDirectory>src/main/java/de.geoinfoBonn.graphLibrary.mapMatching</sourceDirectory>
-		<testSourceDirectory>src/test/java/de.geoinfoBonn.graphLibrary.mapMatching</testSourceDirectory>
-		<testResources>
-			<testResource>
-				<directory>src/test/resources/de.geoinfoBonn.graphLibrary.mapMatching</directory>
-			</testResource>
-		</testResources>
 
 		<plugins>
 			<plugin>

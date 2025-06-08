@@ -25,14 +25,14 @@ import de.geoinfoBonn.graphLibrary.core.shortestPath.MultiTargetNodeVisitor;
 
 public class Matching<I> {
 
-	private LinkedList<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> path;
-	private LinkedList<DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>>> pathArcs;
-	private LinkedList<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> matches;
+	private final LinkedList<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> path;
+	private final LinkedList<DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>>> pathArcs;
+	private final LinkedList<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> matches;
 	private ArrayList<Point2D> track;
-	private HashSet<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> offRoadNodes;
-	private DiGraph<Point2D, DoubleWeightDataWithInfo<I>> g;
-	private int oldNumberOfArcs;
-	private int oldNumberOfNodes;
+	private final HashSet<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> offRoadNodes;
+	private final DiGraph<Point2D, DoubleWeightDataWithInfo<I>> g;
+	private final int oldNumberOfArcs;
+	private final int oldNumberOfNodes;
 
 	public static double RADIUS = 25.0;
 	public static int MAX_CAND_N = Integer.MAX_VALUE;
@@ -70,7 +70,7 @@ public class Matching<I> {
 		STRtree segments = new STRtree();
 		for (DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>> s : g.getArcs()) {
 			if (s.getTwin() == null
-					|| POINT_LEX_ORDER.compare(s.getSource().getNodeData(), s.getTarget().getNodeData()) == -1) {
+					|| POINT_LEX_ORDER.compare(s.getSource().getNodeData(), s.getTarget().getNodeData()) < 0) {
 				Envelope env = new Envelope();
 				env.expandToInclude(s.getSource().getNodeData().getX(), s.getSource().getNodeData().getY());
 				env.expandToInclude(s.getTarget().getNodeData().getX(), s.getTarget().getNodeData().getY());
@@ -88,7 +88,7 @@ public class Matching<I> {
 		if (ADD_OFFROAD_CANDIDATE) {
 			track = input_track;
 			for (int i = 0; i < input_track.size(); i++) {
-				CandidateMatch<I> offRoadCandidate = new CandidateMatch<I>(input_track.get(i), input_track.get(i),
+				CandidateMatch<I> offRoadCandidate = new CandidateMatch<>(input_track.get(i), input_track.get(i),
 						null);
 				candidates.get(i).add(offRoadCandidate);
 				DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> offRoadNode = g.addNode(input_track.get(i));
@@ -97,10 +97,10 @@ public class Matching<I> {
 			}
 		} else {
 			// reduce track to gps points that have at least one candidate
-			track = new ArrayList<Point2D>();
-			ArrayList<LinkedList<CandidateMatch<I>>> candidates_new = new ArrayList<LinkedList<CandidateMatch<I>>>();
+			track = new ArrayList<>();
+			ArrayList<LinkedList<CandidateMatch<I>>> candidates_new = new ArrayList<>();
 			for (int i = 0; i < input_track.size(); i++) {
-				if (candidates.get(i).size() > 0) {
+				if (!candidates.get(i).isEmpty()) {
 					track.add(input_track.get(i));
 					candidates_new.add(candidates.get(i));
 				}
@@ -113,12 +113,8 @@ public class Matching<I> {
 		for (LinkedList<CandidateMatch<I>> candidatesOfSamePoint : candidates) {
 			for (CandidateMatch<I> c : candidatesOfSamePoint) {
 				if (c.mapSegment != null) {
-					LinkedList<CandidateMatch<I>> pointsOnSeg = candidatesToInject.get(c.mapSegment);
-					if (pointsOnSeg == null) {
-						pointsOnSeg = new LinkedList<CandidateMatch<I>>();
-						candidatesToInject.put(c.mapSegment, pointsOnSeg);
-					}
-					pointsOnSeg.add(c);
+                    LinkedList<CandidateMatch<I>> pointsOnSeg = candidatesToInject.computeIfAbsent(c.mapSegment, k -> new LinkedList<>());
+                    pointsOnSeg.add(c);
 				}
 			}
 		}
@@ -129,7 +125,7 @@ public class Matching<I> {
 			DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>> arc1 = e.getKey();
 			LinkedList<CandidateMatch<I>> candsOnArc1 = e.getValue();
 
-			if (POINT_LEX_ORDER.compare(arc1.getSource().getNodeData(), arc1.getTarget().getNodeData()) == -1) {
+			if (POINT_LEX_ORDER.compare(arc1.getSource().getNodeData(), arc1.getTarget().getNodeData()) < 0) {
 				Collections.sort(candsOnArc1);
 			} else {
 				Collections.sort(candsOnArc1, Collections.reverseOrder());
@@ -147,7 +143,7 @@ public class Matching<I> {
 			double oldArcLength = arc1.getSource().getNodeData().distance(arc1.getTarget().getNodeData());
 			for (int i = 1; i < newNodes.size(); i++) {
 				double newArcLength = newNodes.get(i).getNodeData().distance(newNodes.get(i - 1).getNodeData());
-				DoubleWeightDataWithInfo<I> dw1 = new DoubleWeightDataWithInfo<I>(
+				DoubleWeightDataWithInfo<I> dw1 = new DoubleWeightDataWithInfo<>(
 						arc1.getArcData().getValue() * newArcLength / oldArcLength, arc1.getArcData().getInfo());
 				g.addArc(newNodes.get(i - 1), newNodes.get(i), dw1);
 
@@ -172,7 +168,7 @@ public class Matching<I> {
 					for (CandidateMatch<I> c2 : candidates.get(i + 1)) {
 						Point2D p2 = c2.getMapPoint();
 						g.addArc(c1.getNode(), c2.getNode(),
-								new DoubleWeightDataWithInfo<I>(OFF_ROAD_WEIGHT * p1.distance(p2), null));
+								new DoubleWeightDataWithInfo<>(OFF_ROAD_WEIGHT * p1.distance(p2), null));
 					}
 				}
 				if (i > 0) {
@@ -180,7 +176,7 @@ public class Matching<I> {
 						if (c0.mapSegment != null) {
 							Point2D p0 = c0.getMapPoint();
 							g.addArc(c0.getNode(), c1.getNode(),
-									new DoubleWeightDataWithInfo<I>(OFF_ROAD_WEIGHT * p0.distance(p1), null));
+									new DoubleWeightDataWithInfo<>(OFF_ROAD_WEIGHT * p0.distance(p1), null));
 						}
 					}
 				}
@@ -198,8 +194,14 @@ public class Matching<I> {
 			DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> dummy = g.addNode(null);
 			dummies.add(dummy);
 			for (CandidateMatch<I> cm : candidatesForCurrentPoint) {
-				g.addArc(dummy, cm.getNode(),
-						new DoubleWeightDataWithInfo<I>(CANDIDATE_COST_WEIGHT * cm.getCandidateCost(), null));
+				if(i == 0) {
+					g.addArc(dummy, cm.getNode(),
+							new DoubleWeightDataWithInfo<>(CANDIDATE_COST_WEIGHT * 10 * cm.getCandidateCost(), null));
+				} else {
+					g.addArc(dummy, cm.getNode(),
+							new DoubleWeightDataWithInfo<>(CANDIDATE_COST_WEIGHT * cm.getCandidateCost(), null));
+
+				}
 			}
 		}
 
@@ -218,7 +220,7 @@ public class Matching<I> {
 				for (WeightedPathToCandidate<I> myPath : allWPs.get(i - 1)) {
 					DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>> dummyArc = g.getArc(dummy, myPath.getTarget());
 					if (dummyArc != null) {
-						dummyArc.setArcData(new DoubleWeightDataWithInfo<I>(
+						dummyArc.setArcData(new DoubleWeightDataWithInfo<>(
 								dummyArc.getArcData().getValue() + myPath.getDistance(), null));
 					}
 				}
@@ -231,15 +233,15 @@ public class Matching<I> {
 			}
 
 			// let dijkstra run from source to targets
-			dijkstra.run(dummy, new MultiTargetNodeVisitor<Point2D, DoubleWeightDataWithInfo<I>>(targets, dijkstra));
+			dijkstra.run(dummy, new MultiTargetNodeVisitor<>(targets, dijkstra));
 
 			// memorize solutions of dijkstra
-			LinkedList<WeightedPathToCandidate<I>> myPathList = new LinkedList<WeightedPathToCandidate<I>>();
+			LinkedList<WeightedPathToCandidate<I>> myPathList = new LinkedList<>();
 			for (CandidateMatch<I> cm : candidates.get(i + 1)) {
 				List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> p = g
 						.toNodeList(dijkstra.getPath(cm.getNode().getId()));
 				double d = dijkstra.getDistance(cm.getNode());
-				WeightedPathToCandidate<I> wp = new WeightedPathToCandidate<I>(p, d, cm);
+				WeightedPathToCandidate<I> wp = new WeightedPathToCandidate<>(p, d, cm);
 				myPathList.add(wp);
 			}
 			allWPs.add(myPathList);
@@ -302,7 +304,7 @@ public class Matching<I> {
 	 */
 	private ArrayList<LinkedList<CandidateMatch<I>>> getBestKCandidatesForEachTrackPoint(STRtree segments,
 			ArrayList<Point2D> gps_track, double r, int k) {
-		ArrayList<LinkedList<CandidateMatch<I>>> allCandidates = new ArrayList<LinkedList<CandidateMatch<I>>>();
+		ArrayList<LinkedList<CandidateMatch<I>>> allCandidates = new ArrayList<>();
 		for (Point2D gps_point : gps_track) {
 			LinkedList<CandidateMatch<I>> candidates = getBestKCandidatesForTrackPoint(segments, gps_point, r, k);
 			allCandidates.add(candidates);
@@ -320,7 +322,7 @@ public class Matching<I> {
 	 */
 	private LinkedList<CandidateMatch<I>> getBestKCandidatesForTrackPoint(STRtree segments, Point2D gps_point, double r,
 			int k) {
-		LinkedList<CandidateMatch<I>> candidates = new LinkedList<CandidateMatch<I>>();
+		LinkedList<CandidateMatch<I>> candidates = new LinkedList<>();
 
 		// square-shaped search window around gps_point
 		Envelope searchEnvelope = new Envelope(gps_point.getX() - r, gps_point.getX() + r, gps_point.getY() - r,
@@ -337,23 +339,20 @@ public class Matching<I> {
 
 			// if point on seg is within search radius, add it to candidate list
 			if (Math.hypot(gps_point.getX() - nearestPoint.getX(), gps_point.getY() - nearestPoint.getY()) <= r) {
-				CandidateMatch<I> cm = new CandidateMatch<I>(gps_point, nearestPoint, seg);
+				CandidateMatch<I> cm = new CandidateMatch<>(gps_point, nearestPoint, seg);
 				candidates.add(cm);
 			}
 		}
 
 		// sort candidates by distance
-		Comparator<CandidateMatch<I>> myCandidateComp = new Comparator<CandidateMatch<I>>() {
-			@Override
-			public int compare(CandidateMatch<I> a, CandidateMatch<I> b) {
-				if (a.getMapPoint().distance(a.getGpsPoint()) < b.getMapPoint().distance(b.getGpsPoint()))
-					return -1;
-				if (a.getMapPoint().distance(a.getGpsPoint()) > b.getMapPoint().distance(b.getGpsPoint()))
-					return 1;
-				return POINT_LEX_ORDER.compare(a.getMapPoint(), b.getMapPoint());
-			}
-		};
-		Collections.sort(candidates, myCandidateComp);
+		Comparator<CandidateMatch<I>> myCandidateComp = (a, b) -> {
+            if (a.getMapPoint().distance(a.getGpsPoint()) < b.getMapPoint().distance(b.getGpsPoint()))
+                return -1;
+            if (a.getMapPoint().distance(a.getGpsPoint()) > b.getMapPoint().distance(b.getGpsPoint()))
+                return 1;
+            return POINT_LEX_ORDER.compare(a.getMapPoint(), b.getMapPoint());
+        };
+		candidates.sort(myCandidateComp);
 
 		// remove all but the best k candidates
 		while (candidates.size() > MAX_CAND_N)
@@ -394,7 +393,7 @@ public class Matching<I> {
 			if (!offRoadNodes.contains(node)) {
 				currentChunk.add(node);
 			} else {
-				if (currentChunk.size() > 0) {
+				if (!currentChunk.isEmpty()) {
 					if (currentChunk.size() > 1) {
 						chunks.add(currentChunk);
 					}

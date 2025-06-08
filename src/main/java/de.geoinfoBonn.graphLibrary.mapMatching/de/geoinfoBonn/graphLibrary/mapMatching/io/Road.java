@@ -21,14 +21,14 @@ public class Road<I> {
 	/**
 	 * the road geometry as a sequence of points
 	 */
-	private ArrayList<Point2D> points;
+	private final ArrayList<Point2D> points;
 
 	/**
 	 * the road type, e.g., motorway
 	 */
-	private I info;
+	private final I info;
 
-	private double weight;
+	private final double weight;
 
 	/**
 	 * constructor for setting road attributes
@@ -99,7 +99,7 @@ public class Road<I> {
 					DoubleWeightDataWithInfo<I> arcData = new DoubleWeightDataWithInfo<>(
 							r.weight * segLength / roadLength, r.getInfo());
 					g.addArc(prevNode, currentNode, arcData);
-					g.addArc(currentNode, prevNode, arcData);
+//					g.addArc(currentNode, prevNode, arcData);  // comment out to make all links bidirectional
 				}
 				prevNode = currentNode;
 			}
