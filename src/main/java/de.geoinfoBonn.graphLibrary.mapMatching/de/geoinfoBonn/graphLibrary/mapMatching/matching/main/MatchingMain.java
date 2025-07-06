@@ -193,8 +193,11 @@ public class MatchingMain {
 				}
 
 				// Close file
-				System.out.println("Closing geopackage...");
+				Logger.info("Closing geopackage...");
 				out.close();
+
+				// Log message
+				Logger.info("Wrote results to " + outputFile.getAbsolutePath());
 			});
 			Runtime.getRuntime().addShutdownHook(closeGpkgHook);
 
@@ -202,6 +205,7 @@ public class MatchingMain {
 
 			for(final List<Track> partition : partitions) {
 
+				currPartition++;
 				Logger.info("COMPUTING PARTITION " + currPartition + " OF " + numberOfPartitions + "...");
 
 				// Initiate matching threads
@@ -224,58 +228,55 @@ public class MatchingMain {
 				}
 
 				// Paths
-				paths.clear();
 				Arrays.stream(workers).forEach(w -> paths.addAll(w.getPaths()));
 				paths.sort(Comparator.comparingLong(Track::getId).thenComparingInt(Track::getSubtrack));
 				Track.writeToGpkg(out, "paths", paths,false, false, crs);
+				paths.clear();
 
 				// Matches
 				if(writeMatches) {
-					matches.clear();
 					Arrays.stream(workers).forEach(w -> matches.addAll(w.getMatches()));
 					matches.sort(Comparator.comparingLong(Track::getId).thenComparingInt(Track::getSubtrack));
 					Track.writeToGpkg(out,"matches", matches, false, false, crs);
+					matches.clear();
 				}
 
 				// Chunks
 				if(writeChunks) {
-					chunks.clear();
 					Arrays.stream(workers).forEach(w -> chunks.addAll(w.getChunks()));
 					chunks.sort(Comparator.comparingLong(Track::getId).thenComparingInt(Track::getSubtrack).thenComparingInt(Track::getSection));
 					Track.writeToGpkg(out,"chunks", chunks, true, false, crs);
+					chunks.clear();
 				}
 
 				// Chunk paths
 				if(writeChunkPaths) {
-					chunkPaths.clear();
 					Arrays.stream(workers).forEach(w -> chunkPaths.addAll(w.getChunkPaths()));
 					chunkPaths.sort(Comparator.comparingLong(Track::getId).thenComparingInt(Track::getSubtrack));
 					Track.writeToGpkg(out,"chunkPaths", chunkPaths, false, false, crs);
+					chunkPaths.clear();
 				}
 
 				// Global paths
 				if(writeGlobalPaths) {
-					globalPaths.clear();
 					Arrays.stream(workers).forEach(w -> globalPaths.addAll(w.getGlobalPaths()));
 					globalPaths.sort(Comparator.comparingLong(Track::getId).thenComparingInt(Track::getSubtrack));
 					Track.writeToGpkg(out, "globalPaths",globalPaths, false, false, crs);
+					globalPaths.clear();
 				}
 
 
 				// Segments
 				if(writeSegments) {
-					segments.clear();
 					Arrays.stream(workers).forEach(w -> segments.addAll(w.getSegments()));
 					segments.sort(Comparator.comparingLong(Track::getId).thenComparingInt(Track::getSubtrack).thenComparingInt(Track::getSection));
 					Track.writeToGpkg(out,"segments", segments, true, true, crs);
+					segments.clear();
 				}
-
-				currPartition++;
 			}
 
 			// Normal exit
 			System.exit(0);
-
 
 		} catch (IOException e) {
 			throw new RuntimeException(e);

@@ -34,10 +34,10 @@ public class Matching<I> {
 	private final int oldNumberOfArcs;
 	private final int oldNumberOfNodes;
 
-	public static double RADIUS = 25.0;
-	public static int MAX_CAND_N = Integer.MAX_VALUE;
+	public static double RADIUS = 100.0;
+	public static int MAX_CAND_N = Integer.MAX_VALUE; // has been 50 so far...
 	public static double CANDIDATE_COST_WEIGHT = 0.01;
-	public static double OFF_ROAD_WEIGHT = 1.5;
+	public static double OFF_ROAD_WEIGHT = 15;
 	public static boolean ADD_OFFROAD_CANDIDATE = true;
 	public static boolean VERBOSE = false;
 
