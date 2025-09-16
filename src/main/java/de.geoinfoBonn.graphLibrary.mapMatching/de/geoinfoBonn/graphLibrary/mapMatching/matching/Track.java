@@ -38,8 +38,6 @@ import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 import org.geotools.api.feature.simple.SimpleFeature;
 import org.geotools.api.feature.simple.SimpleFeatureType;
 
-import javax.sql.DataSource;
-
 public class Track {
 
 	private final long id;
@@ -84,11 +82,7 @@ public class Track {
 		return subtrack;
 	}
 
-	public static ArrayList<Track> importFromShapefile(String filename) {
-		return importFromShapefile(filename, null);
-	}
-
-	public static ArrayList<Track> importFromShapefile(String filename, String nameColumn) {
+	public static ArrayList<Track> importFromShapefile(String filename, String idAttributeName) {
 		ArrayList<Track> trajectories = new ArrayList<>();
 		try {
 			if (filename.endsWith(".shp")) {
@@ -104,36 +98,34 @@ public class Track {
 
 				FeatureCollection<SimpleFeatureType, SimpleFeature> myFeatureCollection = source.getFeatures(filter);
 
-				long i = 0;
 				try (FeatureIterator<SimpleFeature> features = myFeatureCollection.features()) {
 					while (features.hasNext()) {
 						SimpleFeature myFeature = features.next();
-						long id = nameColumn != null ? (long) myFeature.getAttribute(nameColumn) : i;
+						long id = getIdAsLong(idAttributeName, myFeature);
 						Geometry myGeometry = (Geometry) myFeature.getDefaultGeometry();
 						if (myGeometry.getGeometryType().equals("LineString")) {
 							ArrayList<Point2D> points = new ArrayList<>();
 							Coordinate[] xyz = myGeometry.getCoordinates();
-							for (int j = 0; j < xyz.length; j++) {
-								Point2D p = new Point2D.Double(xyz[j].x, xyz[j].y);
-								points.add(p);
-							}
+                            for (Coordinate coordinate : xyz) {
+                                Point2D p = new Point2D.Double(coordinate.x, coordinate.y);
+                                points.add(p);
+                            }
 							trajectories.add(new Track(id, 0, points));
 						} else if (myGeometry.getGeometryType().equals("MultiLineString")) {
 							for (int geoIndex = 0; geoIndex < myGeometry.getNumGeometries(); geoIndex++) {
 								Geometry myGeometryPart = myGeometry.getGeometryN(geoIndex);
 								ArrayList<Point2D> points = new ArrayList<>();
 								Coordinate[] xyz = myGeometryPart.getCoordinates();
-								for (int j = 0; j < xyz.length; j++) {
-									Point2D p = new Point2D.Double(xyz[j].x, xyz[j].y);
-									points.add(p);
-								}
+                                for (Coordinate coordinate : xyz) {
+                                    Point2D p = new Point2D.Double(coordinate.x, coordinate.y);
+                                    points.add(p);
+                                }
 								trajectories.add(new Track(id, geoIndex, points));
 							}
 						} else {
 							Logger.warn(
 									"The shapefile does not contain a polyline but a " + myGeometry.getGeometryType());
 						}
-						i++;
 					}
 				} catch (Exception ex) {
 					throw new RuntimeException(ex);
@@ -146,6 +138,17 @@ public class Track {
 		}
 		return trajectories;
 
+	}
+
+	private static long getIdAsLong(String idAttributeName, SimpleFeature myFeature) {
+		Object idObject = myFeature.getAttribute(idAttributeName);
+		if(idObject instanceof Long) {
+			return (long) idObject;
+		} else if (idObject instanceof Integer) {
+			return ((Integer) idObject).longValue();
+		} else {
+			throw new RuntimeException(idObject + " must be an int or long data type, but is a " + idObject.getClass().getName());
+		}
 	}
 
 	public static void writeToGpkg(GeoPackage out, String description, ArrayList<Track> paths,
@@ -225,8 +228,7 @@ public class Track {
 				String _identifier = identifier.toString();
 				CoordinateReferenceSystem flippedCRS = CRS.decode(_identifier, true);
 				if (CRS.getAxisOrder(flippedCRS) == CRS.AxisOrder.EAST_NORTH) {
-					ReprojectingFeatureCollection result = new ReprojectingFeatureCollection(fc, flippedCRS);
-					return result;
+                    return new ReprojectingFeatureCollection(fc, flippedCRS);
 				}
 			} catch (Exception e) {
 				// couldn't flip - try again

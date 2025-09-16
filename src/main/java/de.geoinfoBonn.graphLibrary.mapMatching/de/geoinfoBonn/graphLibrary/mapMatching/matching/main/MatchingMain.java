@@ -214,7 +214,7 @@ public class MatchingMain {
 				for(int i = 0; i < numberOfThreads; i++) {
 					workers[i] = new TrajectoryWorker(trajectoriesQueue,counter,linkIdName,roads,
 							writeMatches,writeChunks,writeChunkPaths,writeGlobalPaths,writeSegments);
-					threads[i] = new Thread(workers[i],"Trajectory # " + i);
+					threads[i] = new Thread(workers[i],"Worker # " + i);
 					threads[i].start();
 				}
 
@@ -237,7 +237,7 @@ public class MatchingMain {
 				if(writeMatches) {
 					Arrays.stream(workers).forEach(w -> matches.addAll(w.getMatches()));
 					matches.sort(Comparator.comparingLong(Track::getId).thenComparingInt(Track::getSubtrack));
-					Track.writeToGpkg(out,"matches", matches, false, false, crs);
+					Track.writeToGpkg(out,"matches", matches, true, false, crs);
 					matches.clear();
 				}
 
@@ -273,6 +273,8 @@ public class MatchingMain {
 					Track.writeToGpkg(out,"segments", segments, true, true, crs);
 					segments.clear();
 				}
+
+				System.gc();
 			}
 
 			// Normal exit
@@ -445,7 +447,7 @@ public class MatchingMain {
 						Point2D targetPoint = arc.getTarget().getNodeData();
 
 						if(sourcePoint.equals(targetPoint)) {
-							continue;
+							throw new RuntimeException("Source and target points are the same!");
 						}
 
 						ArrayList<Point2D> segment = new ArrayList<>();
@@ -459,11 +461,12 @@ public class MatchingMain {
 				// Matches
 				if(saveMatches) {
 					ArrayList<Point2D> track_matchedPoints = extractPointsFromPath(m.getMatches());
+					LinkedList<Integer> segmentIdx = m.getMatchesArcCount();
 					for (int i = 0; i < track.getTrackPoints().size(); i++) {
 						ArrayList<Point2D> match = new ArrayList<>();
 						match.add(track.getTrackPoints().get(i));
 						match.add(track_matchedPoints.get(i));
-						matches.add(new Track(track.getId(), track.getSubtrack(), match));
+						matches.add(new Track(track.getId(), track.getSubtrack(),segmentIdx.get(i), match));
 					}
 				}
 

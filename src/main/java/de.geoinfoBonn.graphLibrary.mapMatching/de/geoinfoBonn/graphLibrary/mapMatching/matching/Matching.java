@@ -2,13 +2,7 @@ package de.geoinfoBonn.graphLibrary.mapMatching.matching;
 
 import java.awt.geom.Line2D;
 import java.awt.geom.Point2D;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
 import java.util.Map.Entry;
 
 import org.locationtech.jts.geom.Envelope;
@@ -22,12 +16,14 @@ import de.geoinfoBonn.graphLibrary.core.geometry.Calculations;
 import de.geoinfoBonn.graphLibrary.core.geometry.PointComparator;
 import de.geoinfoBonn.graphLibrary.core.shortestPath.Dijkstra;
 import de.geoinfoBonn.graphLibrary.core.shortestPath.MultiTargetNodeVisitor;
+import org.tinylog.Logger;
 
 public class Matching<I> {
 
 	private final LinkedList<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> path;
 	private final LinkedList<DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>>> pathArcs;
 	private final LinkedList<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> matches;
+	private final LinkedList<Integer> matchesArcCount;
 	private ArrayList<Point2D> track;
 	private final HashSet<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> offRoadNodes;
 	private final DiGraph<Point2D, DoubleWeightDataWithInfo<I>> g;
@@ -65,8 +61,7 @@ public class Matching<I> {
 		if (VERBOSE)
 			System.out.println("Size of graph before node insertion:" + oldNumberOfNodes + " " + oldNumberOfArcs);
 
-		// compute strtree with segments of graph (for double-edges: only arcs pointing
-		// from left to right)
+		// compute strtree with segments of graph (for double-edges: only arcs pointing from left to right)
 		STRtree segments = new STRtree();
 		for (DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>> s : g.getArcs()) {
 			if (s.getTwin() == null
@@ -148,7 +143,7 @@ public class Matching<I> {
 				g.addArc(newNodes.get(i - 1), newNodes.get(i), dw1);
 
 				if (arc1.getTwin() != null) {
-					DoubleWeightDataWithInfo<I> dw2 = new DoubleWeightDataWithInfo<I>(
+					DoubleWeightDataWithInfo<I> dw2 = new DoubleWeightDataWithInfo<>(
 							arc1.getTwin().getArcData().getValue() * newArcLength / oldArcLength,
 							arc1.getTwin().getArcData().getInfo());
 					g.addArc(newNodes.get(i), newNodes.get(i - 1), dw2);
@@ -209,7 +204,7 @@ public class Matching<I> {
 		Dijkstra<Point2D, DoubleWeightDataWithInfo<I>> dijkstra = new Dijkstra<>(g);
 
 		// search paths
-		ArrayList<LinkedList<WeightedPathToCandidate<I>>> allWPs = new ArrayList<LinkedList<WeightedPathToCandidate<I>>>();
+		ArrayList<LinkedList<WeightedPathToCandidate<I>>> allWPs = new ArrayList<>();
 		for (int i = 0; i < candidates.size() - 1; i++) {
 
 			// define source
@@ -267,16 +262,20 @@ public class Matching<I> {
 		pathArcs = new LinkedList<>();
 		matches = new LinkedList<>();
 		matches.add(lastNode);
+		matchesArcCount = new LinkedList<>();
+		matchesArcCount.add(0);
 
 		for (int i = candidates.size() - 2; i >= 0; i--) {
 			for (WeightedPathToCandidate<I> myWP : allWPs.get(i)) {
 				if (myWP.getTarget() == lastNode) {
 					List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> subPath = myWP.getPath();
 					subPath.remove(0); // remove dummy node
-					pathArcs.addAll(0, g.getPathArcs(subPath));
+					LinkedList<DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>>> subPathArcs = getPathArcs(subPath);
+					pathArcs.addAll(0, subPathArcs);
 					path.addAll(0, subPath);
 					lastNode = subPath.get(0);
 					matches.add(0, lastNode);
+					matchesArcCount.add(0,subPathArcs.size());
 					break;
 				}
 			}
@@ -290,6 +289,21 @@ public class Matching<I> {
 //			}
 //		}
 
+	}
+
+	public LinkedList<DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>>> getPathArcs(List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> pathNodes) {
+		LinkedList<DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>>> pathArcs = new LinkedList<>();
+		DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> u = null;
+		for (DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> v : pathNodes) {
+			if (u != null) {
+				// add arc uv to list
+				DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>> uv = g.getArc(u, v);
+				if (uv != null && !u.getNodeData().equals(v.getNodeData()))
+					pathArcs.add(uv);
+			}
+			u = v;
+		}
+		return pathArcs;
 	}
 
 	/**
@@ -309,6 +323,68 @@ public class Matching<I> {
 			LinkedList<CandidateMatch<I>> candidates = getBestKCandidatesForTrackPoint(segments, gps_point, r, k);
 			allCandidates.add(candidates);
 		}
+
+		Map<Integer, LinkedList<CandidateMatch<I>>> newCandidates = new HashMap<>();
+		for(int i = 0 ; i < allCandidates.size() ; i++) {
+			for(CandidateMatch<I> candidate : allCandidates.get(i)) {
+				Point2D map_point = candidate.getMapPoint();
+
+				if(!map_point.equals(candidate.getSegment().getSource().getNodeData()) &&
+						!map_point.equals(candidate.getSegment().getTarget().getNodeData())) {
+
+					long segmentId = (long) candidate.getSegmentType();
+
+					for(int j = 0 ; j < gps_track.size(); j++) {
+						if(i != j) {
+							if(allCandidates.get(j).stream().anyMatch(c -> c.getSegmentType().equals(segmentId) &&
+									!c.getMapPoint().equals(c.getSegment().getSource().getNodeData()) &&
+									!c.getMapPoint().equals(c.getSegment().getTarget().getNodeData()))) {
+								Point2D gps_point = gps_track.get(j);
+								if(Math.hypot(gps_point.getX() - map_point.getX(), gps_point.getY() - map_point.getY()) <= RADIUS) {
+									CandidateMatch<I> cm = new CandidateMatch<>(gps_point, map_point, candidate.getSegment());
+									newCandidates.computeIfAbsent(j,m -> new LinkedList<>()).add(cm);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// add new candidates
+		if(VERBOSE) {
+			Logger.info("Had " + allCandidates.stream().map(LinkedList::size).reduce(0, Integer::sum) + " candidates");
+		}
+		for(Map.Entry<Integer, LinkedList<CandidateMatch<I>>> entry : newCandidates.entrySet()) {
+			allCandidates.get(entry.getKey()).addAll(entry.getValue());
+		}
+		if(VERBOSE) {
+			Logger.info("Added " + newCandidates.values().stream().map(LinkedList::size).reduce(0, Integer::sum) + " new candidates");
+			Logger.info("FINALLY HAS " + allCandidates.stream().map(LinkedList::size).reduce(0, Integer::sum) + " CANDIDATES");
+		}
+
+
+		// sort candidates by distance
+		Comparator<CandidateMatch<I>> myCandidateComp = (a, b) -> {
+			if (a.getMapPoint().distance(a.getGpsPoint()) < b.getMapPoint().distance(b.getGpsPoint()))
+				return -1;
+			if (a.getMapPoint().distance(a.getGpsPoint()) > b.getMapPoint().distance(b.getGpsPoint()))
+				return 1;
+			return POINT_LEX_ORDER.compare(a.getMapPoint(), b.getMapPoint());
+		};
+
+		for (LinkedList<CandidateMatch<I>> candidates : allCandidates) {
+            candidates.sort(myCandidateComp);
+
+			// remove all but the best k candidates
+			while (candidates.size() > MAX_CAND_N)
+				candidates.removeLast();
+        }
+		if(VERBOSE) {
+			Logger.info("After removal: " + allCandidates.stream().map(LinkedList::size).reduce(0, Integer::sum) + " candidates.");
+		}
+
+
 		return allCandidates;
 	}
 
@@ -344,19 +420,6 @@ public class Matching<I> {
 			}
 		}
 
-		// sort candidates by distance
-		Comparator<CandidateMatch<I>> myCandidateComp = (a, b) -> {
-            if (a.getMapPoint().distance(a.getGpsPoint()) < b.getMapPoint().distance(b.getGpsPoint()))
-                return -1;
-            if (a.getMapPoint().distance(a.getGpsPoint()) > b.getMapPoint().distance(b.getGpsPoint()))
-                return 1;
-            return POINT_LEX_ORDER.compare(a.getMapPoint(), b.getMapPoint());
-        };
-		candidates.sort(myCandidateComp);
-
-		// remove all but the best k candidates
-		while (candidates.size() > MAX_CAND_N)
-			candidates.removeLast();
 		return candidates;
 	}
 
@@ -433,6 +496,10 @@ public class Matching<I> {
 
 	public LinkedList<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> getMatches() {
 		return matches;
+	}
+
+	public LinkedList<Integer> getMatchesArcCount() {
+		return matchesArcCount;
 	}
 
 	public ArrayList<Point2D> getTrack() {
