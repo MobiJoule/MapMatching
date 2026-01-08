@@ -74,8 +74,7 @@ public class Matching<I> {
 		}
 
 		// find for each gps point the k best candidates
-		ArrayList<LinkedList<CandidateMatch<I>>> candidates = getBestKCandidatesForEachTrackPoint(segments, input_track,
-				RADIUS, MAX_CAND_N);
+		ArrayList<LinkedList<CandidateMatch<I>>> candidates = getBestKCandidatesForEachTrackPoint(segments, input_track);
 
 		// add off-road candidates to candidate lists
 		track = null;
@@ -189,14 +188,11 @@ public class Matching<I> {
 			DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> dummy = g.addNode(null);
 			dummies.add(dummy);
 			for (CandidateMatch<I> cm : candidatesForCurrentPoint) {
+				double dummyWeight = CANDIDATE_COST_WEIGHT * cm.getCandidateCost();
 				if(i == 0) {
-					g.addArc(dummy, cm.getNode(),
-							new DoubleWeightDataWithInfo<>(CANDIDATE_COST_WEIGHT * 10 * cm.getCandidateCost(), null));
-				} else {
-					g.addArc(dummy, cm.getNode(),
-							new DoubleWeightDataWithInfo<>(CANDIDATE_COST_WEIGHT * cm.getCandidateCost(), null));
-
+					dummyWeight *= 10;
 				}
+				g.addArc(dummy, cm.getNode(), new DoubleWeightDataWithInfo<>(dummyWeight, null));
 			}
 		}
 
@@ -269,13 +265,13 @@ public class Matching<I> {
 			for (WeightedPathToCandidate<I> myWP : allWPs.get(i)) {
 				if (myWP.getTarget() == lastNode) {
 					List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> subPath = myWP.getPath();
-					subPath.remove(0); // remove dummy node
+					subPath.removeFirst(); // remove dummy node
 					LinkedList<DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>>> subPathArcs = getPathArcs(subPath);
 					pathArcs.addAll(0, subPathArcs);
 					path.addAll(0, subPath);
-					lastNode = subPath.get(0);
-					matches.add(0, lastNode);
-					matchesArcCount.add(0,subPathArcs.size());
+					lastNode = subPath.getFirst();
+					matches.addFirst(lastNode);
+					matchesArcCount.addFirst(subPathArcs.size());
 					break;
 				}
 			}
@@ -312,18 +308,16 @@ public class Matching<I> {
 	 * 
 	 * @param segments  a quadtree with the segments of the network
 	 * @param gps_track a list with the track points
-	 * @param r         a search radius
-	 * @param k         the number of candidates per track point
 	 * @return for each track point a list of candidate matches
 	 */
-	private ArrayList<LinkedList<CandidateMatch<I>>> getBestKCandidatesForEachTrackPoint(STRtree segments,
-			ArrayList<Point2D> gps_track, double r, int k) {
+	private ArrayList<LinkedList<CandidateMatch<I>>> getBestKCandidatesForEachTrackPoint(STRtree segments, ArrayList<Point2D> gps_track) {
 		ArrayList<LinkedList<CandidateMatch<I>>> allCandidates = new ArrayList<>();
 		for (Point2D gps_point : gps_track) {
-			LinkedList<CandidateMatch<I>> candidates = getBestKCandidatesForTrackPoint(segments, gps_point, r, k);
+			LinkedList<CandidateMatch<I>> candidates = getBestKCandidatesForTrackPoint(segments, gps_point);
 			allCandidates.add(candidates);
 		}
 
+		// Compute candidates of other trajectory points to add to each trajectory point
 		Map<Integer, LinkedList<CandidateMatch<I>>> newCandidates = new HashMap<>();
 		for(int i = 0 ; i < allCandidates.size() ; i++) {
 			for(CandidateMatch<I> candidate : allCandidates.get(i)) {
@@ -392,17 +386,14 @@ public class Matching<I> {
 	 * 
 	 * @param segments
 	 * @param gps_point
-	 * @param r
-	 * @param k
 	 * @return
 	 */
-	private LinkedList<CandidateMatch<I>> getBestKCandidatesForTrackPoint(STRtree segments, Point2D gps_point, double r,
-			int k) {
+	private LinkedList<CandidateMatch<I>> getBestKCandidatesForTrackPoint(STRtree segments, Point2D gps_point) {
 		LinkedList<CandidateMatch<I>> candidates = new LinkedList<>();
 
 		// square-shaped search window around gps_point
-		Envelope searchEnvelope = new Envelope(gps_point.getX() - r, gps_point.getX() + r, gps_point.getY() - r,
-				gps_point.getY() + r);
+		Envelope searchEnvelope = new Envelope(gps_point.getX() - RADIUS, gps_point.getX() + RADIUS,
+				gps_point.getY() - RADIUS, gps_point.getY() + RADIUS);
 
 		// test each segment in search window
 		for (Object o : segments.query(searchEnvelope)) {
@@ -414,7 +405,7 @@ public class Matching<I> {
 			Point2D nearestPoint = Calculations.nearestPointOnSegment(gps_point, line);
 
 			// if point on seg is within search radius, add it to candidate list
-			if (Math.hypot(gps_point.getX() - nearestPoint.getX(), gps_point.getY() - nearestPoint.getY()) <= r) {
+			if (Math.hypot(gps_point.getX() - nearestPoint.getX(), gps_point.getY() - nearestPoint.getY()) <= RADIUS) {
 				CandidateMatch<I> cm = new CandidateMatch<>(gps_point, nearestPoint, seg);
 				candidates.add(cm);
 			}
@@ -471,8 +462,8 @@ public class Matching<I> {
 	}
 
 	public List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> getShortestPathForWholeTrajectory() {
-		DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> s = path.get(0);
-		DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> t = path.get(path.size() - 1);
+		DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> s = path.getFirst();
+		DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> t = path.getLast();
 		Dijkstra<Point2D, DoubleWeightDataWithInfo<I>> dijkstra = new Dijkstra<>(g);
 		dijkstra.run(s, t);
 		return g.toNodeList(dijkstra.getPath(t.getId()));
@@ -482,8 +473,8 @@ public class Matching<I> {
 		ArrayList<List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>>> shortestPaths = new ArrayList<>();
 		Dijkstra<Point2D, DoubleWeightDataWithInfo<I>> dijkstra = new Dijkstra<>(g);
 		for (ArrayList<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> chunk : this.getChunks()) {
-			DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> s = chunk.get(0);
-			DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> t = chunk.get(chunk.size() - 1);
+			DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> s = chunk.getFirst();
+			DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> t = chunk.getLast();
 			dijkstra.run(s.getId(), t.getId());
 			List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> shortestpath = g
 					.toNodeList(dijkstra.getPath(t.getId()));

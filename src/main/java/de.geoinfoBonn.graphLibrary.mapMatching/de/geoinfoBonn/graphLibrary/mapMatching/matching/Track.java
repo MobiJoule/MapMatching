@@ -82,7 +82,33 @@ public class Track {
 		return subtrack;
 	}
 
-	public static ArrayList<Track> importFromShapefile(String filename, String idAttributeName) {
+	private static ArrayList<Point2D> getTrackPoints(Coordinate[] xyz) {
+		ArrayList<Point2D> points = new ArrayList<>();
+		for (Coordinate coordinate : xyz) {
+			Point2D p = new Point2D.Double(coordinate.x, coordinate.y);
+			points.add(p);
+		}
+		return points;
+	}
+
+	private static void addFeature(ArrayList<Track> trajectories, SimpleFeature myFeature, String idAttributeName) {
+		long id = getIdAsLong(idAttributeName, myFeature);
+		Geometry myGeometry = (Geometry) myFeature.getDefaultGeometry();
+		if (myGeometry.getGeometryType().equals("LineString")) {
+			trajectories.add(new Track(id, 0, getTrackPoints(myGeometry.getCoordinates())));
+		} else if (myGeometry.getGeometryType().equals("MultiLineString")) {
+			for (int geoIndex = 0; geoIndex < myGeometry.getNumGeometries(); geoIndex++) {
+				Geometry myGeometryPart = myGeometry.getGeometryN(geoIndex);
+				trajectories.add(new Track(id, geoIndex, getTrackPoints(myGeometryPart.getCoordinates())));
+			}
+		} else {
+			Logger.warn(
+					"The GIS data does not contain polylines but a " + myGeometry.getGeometryType());
+		}
+
+	}
+
+	public static ArrayList<Track> importTrajectories(String filename, String idAttributeName) {
 		ArrayList<Track> trajectories = new ArrayList<>();
 		try {
 			if (filename.endsWith(".shp")) {
@@ -101,37 +127,26 @@ public class Track {
 				try (FeatureIterator<SimpleFeature> features = myFeatureCollection.features()) {
 					while (features.hasNext()) {
 						SimpleFeature myFeature = features.next();
-						long id = getIdAsLong(idAttributeName, myFeature);
-						Geometry myGeometry = (Geometry) myFeature.getDefaultGeometry();
-						if (myGeometry.getGeometryType().equals("LineString")) {
-							ArrayList<Point2D> points = new ArrayList<>();
-							Coordinate[] xyz = myGeometry.getCoordinates();
-                            for (Coordinate coordinate : xyz) {
-                                Point2D p = new Point2D.Double(coordinate.x, coordinate.y);
-                                points.add(p);
-                            }
-							trajectories.add(new Track(id, 0, points));
-						} else if (myGeometry.getGeometryType().equals("MultiLineString")) {
-							for (int geoIndex = 0; geoIndex < myGeometry.getNumGeometries(); geoIndex++) {
-								Geometry myGeometryPart = myGeometry.getGeometryN(geoIndex);
-								ArrayList<Point2D> points = new ArrayList<>();
-								Coordinate[] xyz = myGeometryPart.getCoordinates();
-                                for (Coordinate coordinate : xyz) {
-                                    Point2D p = new Point2D.Double(coordinate.x, coordinate.y);
-                                    points.add(p);
-                                }
-								trajectories.add(new Track(id, geoIndex, points));
-							}
-						} else {
-							Logger.warn(
-									"The shapefile does not contain a polyline but a " + myGeometry.getGeometryType());
-						}
+						addFeature(trajectories,myFeature,idAttributeName);
 					}
 				} catch (Exception ex) {
 					throw new RuntimeException(ex);
 				} finally {
 					dataStore.dispose();
 				}
+			} else if (filename.endsWith(".gpkg")) {
+				GeoPackage geopkg = new GeoPackage(new File(filename));
+                try (geopkg; SimpleFeatureReader reader = geopkg.reader(geopkg.features().getFirst(), null, null)) {
+                    while (reader.hasNext()) {
+                        SimpleFeature myFeature = reader.next();
+                        addFeature(trajectories, myFeature, idAttributeName);
+                    }
+                } catch (Exception ex) {
+                    throw new RuntimeException(ex);
+                }
+
+			} else {
+				throw new RuntimeException("Input trajectories must be in shapefile or geopackage format!");
 			}
 		} catch (IOException e) {
 			e.printStackTrace();

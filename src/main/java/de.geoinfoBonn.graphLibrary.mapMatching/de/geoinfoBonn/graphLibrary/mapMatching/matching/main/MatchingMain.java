@@ -122,7 +122,7 @@ public class MatchingMain {
 
 		// Read trajectories
 		String trajectoryIdName = getOptionalArg(args, "-tid");
-		List<Track> trajectories = Track.importFromShapefile(args[1],trajectoryIdName);
+		List<Track> trajectories = Track.importTrajectories(args[1],trajectoryIdName);
 		Logger.info("Number of trajectories in input file: " + trajectories.size());
 
 		// Filter trajectories
@@ -345,9 +345,15 @@ public class MatchingMain {
 	}
 
 	public static ArrayList<Point2D> extractPointsFromPath(
-			List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<Long>>> path) {
+			List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<Long>>> path,
+			boolean unique) {
 		ArrayList<Point2D> pointList = new ArrayList<>();
 		for (DiGraphNode<Point2D, DoubleWeightDataWithInfo<Long>> node : path) {
+			if(unique & !pointList.isEmpty()) {
+				if(node.getNodeData().equals(pointList.getLast())) {
+					continue;
+				}
+			}
 			pointList.add(node.getNodeData());
 		}
 		return pointList;
@@ -436,7 +442,7 @@ public class MatchingMain {
 
 				// SAVE RESULTS
 				// Paths
-				paths.add(new Track(track.getId(), track.getSubtrack(), extractPointsFromPath(m.getPath())));
+				paths.add(new Track(track.getId(), track.getSubtrack(), extractPointsFromPath(m.getPath(),true)));
 
 				// Segments
 				if(saveSegments) {
@@ -460,7 +466,7 @@ public class MatchingMain {
 
 				// Matches
 				if(saveMatches) {
-					ArrayList<Point2D> track_matchedPoints = extractPointsFromPath(m.getMatches());
+					ArrayList<Point2D> track_matchedPoints = extractPointsFromPath(m.getMatches(),false);
 					LinkedList<Integer> segmentIdx = m.getMatchesArcCount();
 					for (int i = 0; i < track.getTrackPoints().size(); i++) {
 						ArrayList<Point2D> match = new ArrayList<>();
@@ -474,7 +480,7 @@ public class MatchingMain {
 				if(saveChunks) {
 					int chunkCounter = 1;
 					for (ArrayList<DiGraphNode<Point2D, DoubleWeightDataWithInfo<Long>>> chunk : m.getChunks()) {
-						chunks.add(new Track(track.getId(), track.getSubtrack(), chunkCounter++, extractPointsFromPath(chunk)));
+						chunks.add(new Track(track.getId(), track.getSubtrack(), chunkCounter++, extractPointsFromPath(chunk,false)));
 					}
 				}
 
@@ -482,7 +488,7 @@ public class MatchingMain {
 				if(saveChunkPaths) {
 					for (List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<Long>>> chunkPath : m
 							.getShortestPathsForChunks()) {
-						chunkPaths.add(new Track(track.getId(), track.getSubtrack(), extractPointsFromPath(chunkPath)));
+						chunkPaths.add(new Track(track.getId(), track.getSubtrack(), extractPointsFromPath(chunkPath,false)));
 					}
 				}
 
@@ -490,7 +496,7 @@ public class MatchingMain {
 				if(saveGlobalPaths) {
 					List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<Long>>> p = m.getShortestPathForWholeTrajectory();
 					if (p != null && p.size() > 1) {
-						ArrayList<Point2D> p_points = extractPointsFromPath(p);
+						ArrayList<Point2D> p_points = extractPointsFromPath(p,false);
 						globalPaths.add(new Track(track.getId(), track.getSubtrack(), p_points));
 					}
 				}
