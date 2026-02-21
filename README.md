@@ -22,6 +22,10 @@ This repository extends Haunert and Forsch's work to:
 * Improve matching accuracy at the start point by using a larger matching weight
   (i.e., penalty for being further from a link) at the start point relative to
   other points along the trajectory.
+* Incorporate speed penalties into transition cost based on the discrepancy between expected distance and network distance.
+  This avoids matching to trajectories that cover implausible distances between timestamps, thereby avoiding exceptionally
+  high speeds in downstream analysis. These penalties are created if the input trajectories are provided as a csv file with 
+  corresponding timestamps and speeds for each waypoint.
 * Allow modifying link weights based on their attributes. This enables the matching algorithm to favour or avoid
   certain routes when multiple options align with the trajectory (e.g., cycling paths parallel to roads).
   The adjustments are specified in an optional text file read in as an input using the flag "-adj".
@@ -34,7 +38,5 @@ highway = footway 1.5
 ```
 
 # Work in progress:
-* Create flag to specify directed / non-directed graph
-* Incorporate timestamps in output (for later estimating speed)
+* Create flag to specify directed / non-directed graph (currently must comment in/out the relevant section of code)
 * Make independant and eliminate reliance on old "gl-*" libraries
-* Update or remove Ma**r**chingMain.java

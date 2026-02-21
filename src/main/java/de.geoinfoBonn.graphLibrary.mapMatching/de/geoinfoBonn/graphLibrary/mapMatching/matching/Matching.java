@@ -41,9 +41,9 @@ public class Matching<I> {
 
 	/**
 	 * @param input_graph a geometric graph representing the road network
-	 * @param input_track a series of points representing the GPS trajectory
+	 * @param input_track input track
 	 */
-	public Matching(DiGraph<Point2D, DoubleWeightDataWithInfo<I>> input_graph, ArrayList<Point2D> input_track) {
+	public Matching(DiGraph<Point2D, DoubleWeightDataWithInfo<I>> input_graph, Track input_track) {
 
 		if (Matching.VERBOSE) {
 			System.out.println("#################################################################");
@@ -74,18 +74,19 @@ public class Matching<I> {
 		}
 
 		// find for each gps point the k best candidates
-		ArrayList<LinkedList<CandidateMatch<I>>> candidates = getBestKCandidatesForEachTrackPoint(segments, input_track);
+		ArrayList<Point2D> input_track_points = input_track.getTrackPoints();
+		ArrayList<LinkedList<CandidateMatch<I>>> candidates = getBestKCandidatesForEachTrackPoint(segments, input_track_points);
 
 		// add off-road candidates to candidate lists
 		track = null;
 		offRoadNodes = new HashSet<>();
 		if (ADD_OFFROAD_CANDIDATE) {
-			track = input_track;
-			for (int i = 0; i < input_track.size(); i++) {
-				CandidateMatch<I> offRoadCandidate = new CandidateMatch<>(input_track.get(i), input_track.get(i),
+			track = input_track_points;
+			for (int i = 0; i < input_track_points.size(); i++) {
+				CandidateMatch<I> offRoadCandidate = new CandidateMatch<>(input_track_points.get(i), input_track_points.get(i),
 						null);
 				candidates.get(i).add(offRoadCandidate);
-				DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> offRoadNode = g.addNode(input_track.get(i));
+				DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> offRoadNode = g.addNode(input_track_points.get(i));
 				offRoadCandidate.setNode(offRoadNode);
 				offRoadNodes.add(offRoadNode);
 			}
@@ -93,9 +94,9 @@ public class Matching<I> {
 			// reduce track to gps points that have at least one candidate
 			track = new ArrayList<>();
 			ArrayList<LinkedList<CandidateMatch<I>>> candidates_new = new ArrayList<>();
-			for (int i = 0; i < input_track.size(); i++) {
+			for (int i = 0; i < input_track_points.size(); i++) {
 				if (!candidates.get(i).isEmpty()) {
-					track.add(input_track.get(i));
+					track.add(input_track_points.get(i));
 					candidates_new.add(candidates.get(i));
 				}
 			}
@@ -122,7 +123,7 @@ public class Matching<I> {
 			if (POINT_LEX_ORDER.compare(arc1.getSource().getNodeData(), arc1.getTarget().getNodeData()) < 0) {
 				Collections.sort(candsOnArc1);
 			} else {
-				Collections.sort(candsOnArc1, Collections.reverseOrder());
+				candsOnArc1.sort(Collections.reverseOrder());
 			}
 
 			ArrayList<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> newNodes = new ArrayList<>();
@@ -155,10 +156,10 @@ public class Matching<I> {
 
 		// add off-road edges
 		if (ADD_OFFROAD_CANDIDATE) {
-			for (int i = 0; i < input_track.size(); i++) {
+			for (int i = 0; i < input_track_points.size(); i++) {
 				CandidateMatch<I> c1 = candidates.get(i).getLast(); // fetch off-road candidate for i-th track point
 				Point2D p1 = c1.getGpsPoint();
-				if (i < input_track.size() - 1) {
+				if (i < input_track_points.size() - 1) {
 					for (CandidateMatch<I> c2 : candidates.get(i + 1)) {
 						Point2D p2 = c2.getMapPoint();
 						g.addArc(c1.getNode(), c2.getNode(),
@@ -217,6 +218,14 @@ public class Matching<I> {
 				}
 			}
 
+			// Compute expected distance if speeds are available
+			Double expected_distance = null;
+			Double modelled_speed = input_track.getSpeed(i+1);
+			if (modelled_speed != null) {
+				double dt = input_track.getDiffTime(i+1).doubleValue();
+				expected_distance = modelled_speed*dt;
+			}
+
 			// define targets
 			LinkedList<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> targets = new LinkedList<>();
 			for (CandidateMatch<I> cm : candidates.get(i + 1)) {
@@ -229,10 +238,37 @@ public class Matching<I> {
 			// memorize solutions of dijkstra
 			LinkedList<WeightedPathToCandidate<I>> myPathList = new LinkedList<>();
 			for (CandidateMatch<I> cm : candidates.get(i + 1)) {
-				List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> p = g
-						.toNodeList(dijkstra.getPath(cm.getNode().getId()));
-				double d = dijkstra.getDistance(cm.getNode());
-				WeightedPathToCandidate<I> wp = new WeightedPathToCandidate<>(p, d, cm);
+				List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> p = g.toNodeList(dijkstra.getPath(cm.getNode().getId()));
+				double cost = dijkstra.getDistance(cm.getNode());
+
+				// Distance-speed penalty term todo: avoid having link-type penalties as part of the map distance
+				if (expected_distance != null) {
+					double c_dummy = dijkstra.getDistance(p.get(1));
+					double map_distance = cost - c_dummy;
+					double speed_penalty = Math.abs(map_distance - expected_distance);
+
+					// Alternatives (for testing - some work very poorly)
+//					double speed_penalty = Math.max(0.,2*(map_distance - 2 * expected_distance)); // C
+//					double speed_penalty = Math.max(0.,map_distance - 2* expected_distance); // D [2nd best]
+//					double speed_penalty = Math.max(0.,3*(map_distance - 2* expected_distance)); // E
+//					double speed_penalty = Math.max(0, 2 * (map_distance - expected_distance)); // F
+//					double speed_penalty = Math.pow(Math.max(0.,map_distance - 2 * expected_distance),1.2); // G
+//					double speed_penalty = Math.pow(Math.max(0.,map_distance - expected_distance),1.2); // H
+//					double speed_penalty = Math.pow(Math.max(0.,map_distance - 2 * expected_distance),1.5); // I
+//					double speed_penalty = Math.max(0.,map_distance - expected_distance); // J
+//				 	double speed_penalty = Math.abs(map_distance - expected_distance); // K [best]
+//					double speed_penalty = 2 * Math.abs(map_distance - expected_distance); // L
+//					double speed_penalty = 1.5 * Math.abs(map_distance - expected_distance); // M
+
+					// Add speed penalty to cost
+					cost += speed_penalty;
+
+					// For debugging only
+//					Logger.info("i=" + i + "/" + candidates.size() + " p0: " + p.get(1).getId() + " dummy: " + c_dummy + " dx: " + map_distance + " v_mod: " + modelled_speed + " penalty: " + speed_penalty + " cost: " + cost);
+				}
+
+				// Store path
+				WeightedPathToCandidate<I> wp = new WeightedPathToCandidate<>(p, cost, cm);
 				myPathList.add(wp);
 			}
 			allWPs.add(myPathList);
@@ -427,7 +463,7 @@ public class Matching<I> {
 		}
 
 		while (g.getNodes().size() > oldNumberOfNodes) {
-			g.getNodes().remove(g.getNodes().size() - 1);
+			g.getNodes().removeLast();
 		}
 	}
 

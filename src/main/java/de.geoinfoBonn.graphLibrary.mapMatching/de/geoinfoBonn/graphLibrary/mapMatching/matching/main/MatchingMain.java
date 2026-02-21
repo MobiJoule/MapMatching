@@ -438,7 +438,7 @@ public class MatchingMain {
 				}
 
 				// PERFORM MATCHING
-				Matching<Long> m = new Matching<>(g, track.getTrackPoints());
+				Matching<Long> m = new Matching<>(g, track);
 
 				// SAVE RESULTS
 				// Paths

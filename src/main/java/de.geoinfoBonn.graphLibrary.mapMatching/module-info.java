@@ -13,4 +13,6 @@ module de.geoinfoBonn.graphLibrary.mapMatching {
 	requires org.geotools.api;
 	requires com.google.common;
 	requires org.tinylog.api;
+    requires org.apache.commons.csv;
+    requires org.apache.commons.collections4;
 }

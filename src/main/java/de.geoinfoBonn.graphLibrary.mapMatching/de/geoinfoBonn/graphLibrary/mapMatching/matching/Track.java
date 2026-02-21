@@ -1,14 +1,18 @@
 package de.geoinfoBonn.graphLibrary.mapMatching.matching;
 
 import java.awt.geom.Point2D;
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
 import org.tinylog.Logger;
 import java.util.stream.IntStream;
+
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVParser;
+import org.apache.commons.csv.CSVRecord;
 
 import org.geotools.api.data.*;
 import org.geotools.api.feature.type.PropertyDescriptor;
@@ -45,6 +49,9 @@ public class Track {
 	private final Integer section;
 	private final Long type;
 	private final ArrayList<Point2D> trackPoints;
+	private final ArrayList<Long> timestamps;
+	private final ArrayList<Double> speeds;
+	private final ArrayList<Double> covars;
 
 	public Track(long id, int subtrack, ArrayList<Point2D> trackPoints) {
 		this.id = id;
@@ -52,6 +59,9 @@ public class Track {
 		this.section = null;
 		this.type = null;
 		this.trackPoints = trackPoints;
+		this.timestamps = null;
+		this.speeds = null;
+		this.covars = null;
 	}
 
 	public Track(long id, int subtrack, int section, ArrayList<Point2D> trackPoints) {
@@ -60,6 +70,9 @@ public class Track {
 		this.section = section;
 		this.type = null;
 		this.trackPoints = trackPoints;
+		this.timestamps = null;
+		this.speeds = null;
+		this.covars = null;
 	}
 
 	public Track(long id, int subtrack, int section, Long type, ArrayList<Point2D> trackPoints) {
@@ -68,10 +81,37 @@ public class Track {
 		this.section = section;
 		this.type = type;
 		this.trackPoints = trackPoints;
+		this.timestamps = null;
+		this.speeds = null;
+		this.covars = null;
 	}
+
+	public Track(long id, ArrayList<Point2D> trackPoints, ArrayList<Long> timestamps, ArrayList<Double> speeds, ArrayList<Double> covars) {
+		this.id = id;
+		this.subtrack = 0;
+		this.section = null;
+		this.type = null;
+		this.trackPoints = trackPoints;
+		this.timestamps = timestamps;
+		this.speeds = speeds;
+		this.covars = covars;
+	}
+
 
 	public ArrayList<Point2D> getTrackPoints() {
 		return trackPoints;
+	}
+
+	public Long getDiffTime(int i) {
+		return timestamps == null ? null : timestamps.get(i) - timestamps.get(i-1);
+	}
+
+	public Double getSpeed(int i) {
+		return speeds == null ? null : speeds.get(i);
+	}
+
+	public Double getCovar(int i) {
+		return covars == null ? null : covars.get(i);
 	}
 
 	public long getId() {
@@ -145,8 +185,38 @@ public class Track {
                     throw new RuntimeException(ex);
                 }
 
+			} else if (filename.endsWith(".csv")) {
+				Map<Long, ArrayList<Point2D>> pointsMap = new HashMap<>();
+				Map<Long, ArrayList<Long>> timesMap = new HashMap<>();
+				Map<Long, ArrayList<Double>> speedsMap = new HashMap<>();
+				Map<Long, ArrayList<Double>> covarsMap = new HashMap<>();
+
+				try (Reader reader = new FileReader(filename);
+					 CSVParser csvParser = new CSVParser(reader,
+							 CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).build())) {
+
+					 for (CSVRecord record : csvParser) {
+						 long id = Long.parseLong(record.get("id"));
+						 long t = Long.parseLong(record.get("t"));
+						 double x = Double.parseDouble(record.get("x"));
+						 double y = Double.parseDouble(record.get("y"));
+						 double v = Double.parseDouble(record.get("v"));
+						 double covar = Double.parseDouble(record.get("covar"));
+
+						 pointsMap.computeIfAbsent(id, k -> new ArrayList<>()).add(new Point2D.Double(x, y));
+						 timesMap.computeIfAbsent(id, k -> new ArrayList<>()).add(t);
+						 speedsMap.computeIfAbsent(id, k -> new ArrayList<>()).add(v);
+						 covarsMap.computeIfAbsent(id, k -> new ArrayList<>()).add(covar);
+					 }
+
+					 Logger.debug("nothing");
+
+					for (Long id : pointsMap.keySet()) {
+						trajectories.add(new Track(id, pointsMap.get(id), timesMap.get(id), speedsMap.get(id), covarsMap.get(id)));
+					}
+				 }
 			} else {
-				throw new RuntimeException("Input trajectories must be in shapefile or geopackage format!");
+			throw new RuntimeException("Input trajectories must be in shp, gpkg, or csv format!");
 			}
 		} catch (IOException e) {
 			e.printStackTrace();
