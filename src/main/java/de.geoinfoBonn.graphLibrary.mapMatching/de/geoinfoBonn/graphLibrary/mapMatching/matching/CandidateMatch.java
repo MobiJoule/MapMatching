@@ -2,10 +2,10 @@ package de.geoinfoBonn.graphLibrary.mapMatching.matching;
 
 import java.awt.geom.Point2D;
 
-import de.geoinfoBonn.graphLibrary.core.generic.DiGraph.DiGraphArc;
-import de.geoinfoBonn.graphLibrary.core.generic.DiGraph.DiGraphNode;
-import de.geoinfoBonn.graphLibrary.core.generic.DoubleWeightDataWithInfo;
-import de.geoinfoBonn.graphLibrary.core.geometry.PointComparator;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.generic.DiGraph.DiGraphArc;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.generic.DiGraph.DiGraphNode;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.generic.DoubleWeightDataWithInfo;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.geometry.PointComparator;
 
 public class CandidateMatch<I> implements Comparable<CandidateMatch<I>> {
 
@@ -72,7 +72,7 @@ public class CandidateMatch<I> implements Comparable<CandidateMatch<I>> {
 		return gpsPoint;
 	}
 
-	public I getSegmentType() {
+	public I getSegmentInfo() {
 		if (mapSegment == null)
 			return null;
 		return mapSegment.getArcData().getInfo();

@@ -22,19 +22,16 @@ public class RoadReader<I> {
 	 *
 	 * @param filename:      the name of the shapefile
 	 * @param infoGenerator:   function for retrieving link ID
-	 * @param weightColName: the name of the column containing the weight data
+	 * @param distColName: the name of the column containing the distance data
 	 * @return a list of roads
 	 * @throws IOException
 	 */
 	public static <I> LinkedList<Road<I>> importFromGpkg(String filename, Function<SimpleFeature, I> infoGenerator,
-														 String weightColName, Map<String,Double> weightAdjustments) {
+														 String distColName) {
 		LinkedList<Road<I>> roads = new LinkedList<>();
 		int featureCount = 0;
 		int importedFeatureCount = 0;
 		Map<String,Integer> adjustedFeatureCount = new HashMap<>();
-		if(weightAdjustments != null) {
-			weightAdjustments.forEach((k,v) -> adjustedFeatureCount.put(k,0));
-		}
 
 		try {
 			if (filename.endsWith(".gpkg")) {
@@ -45,36 +42,19 @@ public class RoadReader<I> {
 				while(reader.hasNext()) {
 					SimpleFeature feature = reader.next();
 
-					I type = null;
-					if (infoGenerator != null) {
-						type = infoGenerator.apply(feature);
-					}
+					I info = infoGenerator.apply(feature);
 					Geometry myGeometry = (Geometry) feature.getDefaultGeometry();
 					double totalLength = myGeometry.getLength();
 
-					// Compute weight (or use length as default)
-					double weight = weightColName != null ? (double) feature.getAttribute(weightColName) : totalLength;
+					// Compute distance (or use attribute length as default)
+					double distance = distColName != null ? (double) feature.getAttribute(distColName) : totalLength;
 
-					// Adjust weights
-					if(weightAdjustments != null) {
-						for(Map.Entry<String,Double> e : weightAdjustments.entrySet()) {
+					// Compute weight
+					double penalty = ((Road.RoadInfo) info).getWeightAdjustment();
+					adjustedFeatureCount.merge(String.format("%.2f",penalty), 1, Integer::sum);
+					double weight = penalty * distance;
 
-							String criteria = e.getKey();
-
-							int eqlIdx = criteria.indexOf('=');
-							String attr = criteria.substring(0, eqlIdx);
-							String testVal = criteria.substring(eqlIdx+1);
-
-							Object val = feature.getAttribute(attr);
-							if(val != null) {
-								if(testCriteria(val, testVal)) {
-									weight *= e.getValue();
-									adjustedFeatureCount.merge(e.getKey(), 1, Integer::sum);
-								}
-							}
-						}
-					}
-
+					// Create road
 					if (myGeometry.getGeometryType().equals("LineString")) {
 						ArrayList<Point2D> points = new ArrayList<>();
 						Coordinate[] xyz = myGeometry.getCoordinates();
@@ -82,7 +62,7 @@ public class RoadReader<I> {
                             Point2D p = new Point2D.Double(coordinate.x, coordinate.y);
                             points.add(p);
                         }
-						Road<I> r = new Road<>(points, type, weight);
+						Road<I> r = new Road<>(points, info, weight);
 						roads.add(r);
 						importedFeatureCount++;
 					} else if (myGeometry.getGeometryType().equals("MultiLineString")) {
@@ -95,7 +75,7 @@ public class RoadReader<I> {
                                 Point2D p = new Point2D.Double(coordinate.x, coordinate.y);
                                 points.add(p);
                             }
-							Road<I> r = new Road<>(points, type, weight * partLength / totalLength);
+							Road<I> r = new Road<>(points, info, weight * partLength / totalLength);
 							roads.add(r);
 							importedFeatureCount++;
 						}
@@ -115,32 +95,12 @@ public class RoadReader<I> {
 		Logger.info(featureCount + " features read.");
 		Logger.info(importedFeatureCount + " features imported to the road graph.");
 		for(Map.Entry<String,Integer> entry : adjustedFeatureCount.entrySet()) {
-			Logger.info(entry.getValue() + " features with attribute \"" + entry.getKey() + "\" adjusted with factor of " + weightAdjustments.get(entry.getKey()));
+			Logger.info(entry.getValue() + " features adjusted with factor of \"" + entry.getKey());
 		}
-
-
-
 
 		return roads;
 	}
 
-	private static boolean testCriteria(Object val, String testVal) {
-		Class<?> c = val.getClass();
-
-		if(c.equals(String.class)) {
-			return val.equals(testVal);
-		} else if (c.equals(Integer.class)) {
-			return val.equals(Integer.parseInt(testVal));
-		} else if (c.equals(Double.class)) {
-			return val.equals(Double.parseDouble(testVal));
-		} else if (c.equals(Long.class)) {
-			return val.equals(Long.parseLong(testVal));
-		} else if (c.equals(Boolean.class)) {
-			return val.equals(Boolean.parseBoolean(testVal));
-		} else {
-			return false;
-		}
-	}
 
 	public static CoordinateReferenceSystem readCRS(String filename) {
 

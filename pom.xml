@@ -21,12 +21,6 @@
 
 	<dependencies>
 		<dependency>
-			<groupId>de.geoinfoBonn.graphLibrary</groupId>
-			<artifactId>gl-core</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-
-		<dependency>
 			<groupId>org.locationtech.jts</groupId>
 			<artifactId>jts-core</artifactId>
 		</dependency>

@@ -334,10 +334,10 @@ public class Track {
 		SimpleFeatureBuilder featureBuilder = new SimpleFeatureBuilder(featureType);
 
 		for (Track path : paths) {
-//			if (path.length() < 100) {
-//				//logger.warning("track " + path + " is shorter than 100m, skipping export");
-//				continue;
-//			}
+			if (path.trackPoints.size() == 1) {
+				Logger.warn("track " + path.id + " only has one point, skipping export.");
+				continue;
+			}
 			CoordinateArraySequence seq = new CoordinateArraySequence(path.trackPoints.size());
 			int i = 0;
 			for (Point2D p : path.trackPoints) {

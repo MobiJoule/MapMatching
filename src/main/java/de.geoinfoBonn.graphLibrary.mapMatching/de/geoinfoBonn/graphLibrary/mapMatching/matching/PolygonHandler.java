@@ -18,7 +18,7 @@ import org.locationtech.jts.index.strtree.STRtree;
 import org.locationtech.jts.io.ParseException;
 import org.locationtech.jts.io.WKTReader;
 
-import de.geoinfoBonn.graphLibrary.core.structures.Feature;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.structures.Feature;
 
 /**
  * Provides indexed access to the polygons.
@@ -91,7 +91,7 @@ public class PolygonHandler {
 	 *         <code>env</code>
 	 */
 	@SuppressWarnings("unchecked")
-	public List<Feature> queryPolygons(de.geoinfoBonn.graphLibrary.core.geometry.Envelope env) {
+	public List<Feature> queryPolygons(de.geoinfoBonn.graphLibrary.mapMatching.core.geometry.Envelope env) {
 		return index.query(new Envelope(env.getxMin(), env.getxMax(), env.getyMin(), env.getyMax()));
 	}
 

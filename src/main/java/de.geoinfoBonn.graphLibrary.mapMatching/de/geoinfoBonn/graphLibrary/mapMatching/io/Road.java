@@ -6,9 +6,9 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.TreeMap;
 
-import de.geoinfoBonn.graphLibrary.core.generic.DiGraph;
-import de.geoinfoBonn.graphLibrary.core.generic.DoubleWeightDataWithInfo;
-import de.geoinfoBonn.graphLibrary.core.geometry.PointComparator;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.generic.DiGraph;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.generic.DoubleWeightDataWithInfo;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.geometry.PointComparator;
 
 /**
  * A polyline with an additional info attribute, e.g., representing a road type
@@ -105,5 +105,23 @@ public class Road<I> {
 			}
 		}
 		return g;
+	}
+
+	public static class RoadInfo {
+		private final long id;
+		private final double weightAdjustment;
+
+		public RoadInfo(long id, double weightAdjustment) {
+			this.id = id;
+			this.weightAdjustment = weightAdjustment;
+		}
+
+		public long getId() {
+			return this.id;
+		}
+
+		public double getWeightAdjustment() {
+			return this.weightAdjustment;
+		}
 	}
 }

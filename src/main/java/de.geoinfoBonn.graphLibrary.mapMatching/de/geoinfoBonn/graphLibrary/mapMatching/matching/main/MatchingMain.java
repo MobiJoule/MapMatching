@@ -5,19 +5,22 @@ import java.io.*;
 import java.util.*;
 
 import org.apache.commons.lang3.StringUtils;
+import org.geotools.api.feature.simple.SimpleFeature;
 import org.tinylog.Logger;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 import com.google.common.collect.Iterables;
 import com.google.common.math.LongMath;
-import de.geoinfoBonn.graphLibrary.core.generic.DiGraph;
-import de.geoinfoBonn.graphLibrary.core.generic.DiGraph.DiGraphArc;
-import de.geoinfoBonn.graphLibrary.core.generic.DiGraph.DiGraphNode;
-import de.geoinfoBonn.graphLibrary.core.generic.DoubleWeightDataWithInfo;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.generic.DiGraph;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.generic.DiGraph.DiGraphArc;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.generic.DiGraph.DiGraphNode;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.generic.DoubleWeightDataWithInfo;
 import de.geoinfoBonn.graphLibrary.mapMatching.io.Road;
+import de.geoinfoBonn.graphLibrary.mapMatching.io.Road.RoadInfo;
 import de.geoinfoBonn.graphLibrary.mapMatching.io.RoadReader;
 import de.geoinfoBonn.graphLibrary.mapMatching.matching.Matching;
 import de.geoinfoBonn.graphLibrary.mapMatching.matching.Track;
@@ -47,6 +50,7 @@ import static de.geoinfoBonn.graphLibrary.mapMatching.matching.main.AbstractMain
  *  -w  , parameter for offroad weight (default: 1.5) [double]
  *  -v  , flag to print verbose output
  *  -tid, name of trajectory ID column in trajectory data [string]
+ *  -select, for processing only selected trajectory IDs (comma-separated)
  *  -min, minimum trajectory ID to compute
  *  -max, maximum trajectory ID to compute
  *  -nid, name of link ID column in road data [string]
@@ -97,7 +101,7 @@ public class MatchingMain {
 		// weight (e.g., geometric length, travel time)
 		// If left unspecified, the geometric length computed from coordinates is used
 		// as the road's weight
-		String linkWtName = getOptionalArg(args, "-nwt"); // was "-l"
+		String linkDistId = getOptionalArg(args, "-nwt"); // was "-l"
 
 		// The input network attribute unique link ID
 		String linkIdName = getOptionalArg(args, "-nid"); // was "-t"
@@ -110,14 +114,40 @@ public class MatchingMain {
 
 		// Weight adjustments
 		String weightAdjustmentsFile = getOptionalArg(args, "-adj");
-		Map<String,Double> weightAdjustments = null;
-		if(weightAdjustmentsFile != null) {
-			weightAdjustments = readWeightAdjustments(weightAdjustmentsFile);
-		}
+		final Map<String,Double> weightAdjustments = (weightAdjustmentsFile == null) ? null : readWeightAdjustments(weightAdjustmentsFile);
+
+		// InfoGenerator
+		Function<SimpleFeature, RoadInfo> roadInfoGenerator = feature -> {
+
+			// RoadId
+			long roadId = (long) feature.getAttribute(linkIdName);
+
+			// Weight
+			double weight = 1.;
+			if(weightAdjustments != null) {
+				for(Map.Entry<String,Double> e : weightAdjustments.entrySet()) {
+
+					String criteria = e.getKey();
+
+					int eqlIdx = criteria.indexOf('=');
+					String attr = criteria.substring(0, eqlIdx);
+					String testVal = criteria.substring(eqlIdx+1);
+
+					Object val = feature.getAttribute(attr);
+					if(val != null) {
+						if(testCriteria(val, testVal)) {
+							weight *= e.getValue();
+						}
+					}
+				}
+			}
+
+			// Results
+			return new RoadInfo(roadId,weight);
+		};
 
 		// Read roads and CRS
-		LinkedList<Road<Long>> roads = RoadReader.importFromGpkg(args[0],
-				f -> (long) f.getAttribute(linkIdName), linkWtName, weightAdjustments);
+		LinkedList<Road<RoadInfo>> roads = RoadReader.importFromGpkg(args[0],roadInfoGenerator,linkDistId);
 		CoordinateReferenceSystem crs = RoadReader.readCRS(args[0]);
 
 		// Read trajectories
@@ -126,10 +156,18 @@ public class MatchingMain {
 		Logger.info("Number of trajectories in input file: " + trajectories.size());
 
 		// Filter trajectories
+		String selectedIds = getOptionalArg(args, "-select");
 		String minInput = getOptionalArg(args, "-min");
 		String maxInput = getOptionalArg(args, "-max");
 
-		if(minInput != null || maxInput != null) {
+		if(selectedIds != null) {
+			Set<Long> includedIds = Arrays.stream(selectedIds.split(",")).map(Long::parseLong).collect(Collectors.toSet());
+			trajectories = trajectories.stream().filter(f -> includedIds.contains(f.getId())).collect(Collectors.toList());
+			Logger.info("Selected " + trajectories.size() + " trajectories with IDs: " + trajectories.size());
+			if (minInput != null || maxInput != null) {
+				throw new RuntimeException("For filtering IDs, shouldn't combine -select and -min/max");
+			}
+		} else if(minInput != null || maxInput != null) {
 			long min = minInput == null ? Long.MIN_VALUE : Long.parseLong(minInput);
 			long max = maxInput == null ? Long.MAX_VALUE : Long.parseLong(maxInput);
 			trajectories = trajectories.stream().filter(f -> f.getId() >= min && f.getId() <= max).collect(Collectors.toList());
@@ -137,7 +175,7 @@ public class MatchingMain {
 		}
 
 		// Print arguments
-		printArguments(args, partitionSize, numberOfThreads, linkWtName, linkIdName, trajectoryIdName, minInput, maxInput,
+		printArguments(args, partitionSize, numberOfThreads, linkDistId, linkIdName, trajectoryIdName, minInput, maxInput,
 				writeMatches,writeChunks,writeChunkPaths,writeGlobalPaths,writeSegments);
 
 		// Prepare trajectory data
@@ -344,11 +382,11 @@ public class MatchingMain {
 		System.out.println("Contact: forsch@igg.uni-bonn.de");
 	}
 
-	public static ArrayList<Point2D> extractPointsFromPath(
-			List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<Long>>> path,
+	public static <I> ArrayList<Point2D> extractPointsFromPath(
+			List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> path,
 			boolean unique) {
 		ArrayList<Point2D> pointList = new ArrayList<>();
-		for (DiGraphNode<Point2D, DoubleWeightDataWithInfo<Long>> node : path) {
+		for (DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> node : path) {
 			if(unique & !pointList.isEmpty()) {
 				if(node.getNodeData().equals(pointList.getLast())) {
 					continue;
@@ -385,10 +423,28 @@ public class MatchingMain {
 		return weightAdjustments;
 	}
 
+	private static boolean testCriteria(Object val, String testVal) {
+		Class<?> c = val.getClass();
+
+		if(c.equals(String.class)) {
+			return val.equals(testVal);
+		} else if (c.equals(Integer.class)) {
+			return val.equals(Integer.parseInt(testVal));
+		} else if (c.equals(Double.class)) {
+			return val.equals(Double.parseDouble(testVal));
+		} else if (c.equals(Long.class)) {
+			return val.equals(Long.parseLong(testVal));
+		} else if (c.equals(Boolean.class)) {
+			return val.equals(Boolean.parseBoolean(testVal));
+		} else {
+			return false;
+		}
+	}
+
 	static class TrajectoryWorker implements Runnable {
 
 		private final ConcurrentLinkedQueue<Track> tracksQueue;
-		private final DiGraph<Point2D, DoubleWeightDataWithInfo<Long>> g;
+		private final DiGraph<Point2D, DoubleWeightDataWithInfo<RoadInfo>> g;
 		private final AtomicLong counter;
 		private final String typeColName;
 
@@ -405,7 +461,7 @@ public class MatchingMain {
 		private final ArrayList<Track> globalPaths;
 		private final ArrayList<Track> segments;
 
-		TrajectoryWorker(ConcurrentLinkedQueue<Track> tracksQueue, AtomicLong counter, String typeColName, LinkedList<Road<Long>> roads,
+		TrajectoryWorker(ConcurrentLinkedQueue<Track> tracksQueue, AtomicLong counter, String typeColName, LinkedList<Road<RoadInfo>> roads,
 						 boolean saveMatches, boolean saveChunks, boolean saveChunkPaths, boolean saveGlobalPaths, boolean saveSegments) {
 			this.tracksQueue = tracksQueue;
 			this.counter = counter;
@@ -438,7 +494,7 @@ public class MatchingMain {
 				}
 
 				// PERFORM MATCHING
-				Matching<Long> m = new Matching<>(g, track);
+				Matching<RoadInfo> m = new Matching<>(g, track, new RoadInfo(-1,Matching.OFF_ROAD_WEIGHT));
 
 				// SAVE RESULTS
 				// Paths
@@ -447,7 +503,7 @@ public class MatchingMain {
 				// Segments
 				if(saveSegments) {
 					int segmentCounter = 1;
-					for (DiGraphArc<Point2D, DoubleWeightDataWithInfo<Long>> arc : m.getPathArcs()) {
+					for (DiGraphArc<Point2D, DoubleWeightDataWithInfo<RoadInfo>> arc : m.getPathArcs()) {
 
 						Point2D sourcePoint = arc.getSource().getNodeData();
 						Point2D targetPoint = arc.getTarget().getNodeData();
@@ -459,7 +515,7 @@ public class MatchingMain {
 						ArrayList<Point2D> segment = new ArrayList<>();
 						segment.add(sourcePoint);
 						segment.add(targetPoint);
-						Long type = typeColName != null ? arc.getArcData().getInfo() : null;
+						Long type = typeColName != null ? arc.getArcData().getInfo().getId() : null;
 						segments.add(new Track(track.getId(), track.getSubtrack(),segmentCounter++,type, segment));
 					}
 				}
@@ -479,14 +535,14 @@ public class MatchingMain {
 				// Chunks
 				if(saveChunks) {
 					int chunkCounter = 1;
-					for (ArrayList<DiGraphNode<Point2D, DoubleWeightDataWithInfo<Long>>> chunk : m.getChunks()) {
+					for (ArrayList<DiGraphNode<Point2D, DoubleWeightDataWithInfo<RoadInfo>>> chunk : m.getChunks()) {
 						chunks.add(new Track(track.getId(), track.getSubtrack(), chunkCounter++, extractPointsFromPath(chunk,false)));
 					}
 				}
 
 				// Chunk paths
 				if(saveChunkPaths) {
-					for (List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<Long>>> chunkPath : m
+					for (List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<RoadInfo>>> chunkPath : m
 							.getShortestPathsForChunks()) {
 						chunkPaths.add(new Track(track.getId(), track.getSubtrack(), extractPointsFromPath(chunkPath,false)));
 					}
@@ -494,7 +550,7 @@ public class MatchingMain {
 
 				// Global paths
 				if(saveGlobalPaths) {
-					List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<Long>>> p = m.getShortestPathForWholeTrajectory();
+					List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<RoadInfo>>> p = m.getShortestPathForWholeTrajectory();
 					if (p != null && p.size() > 1) {
 						ArrayList<Point2D> p_points = extractPointsFromPath(p,false);
 						globalPaths.add(new Track(track.getId(), track.getSubtrack(), p_points));

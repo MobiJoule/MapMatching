@@ -4,12 +4,6 @@ This repository contains code for matching trajectories (of geographic coordinat
 Jan-Henrik Haunert and Axel Forsch at https://gitlab.igg.uni-bonn.de/graphlibrary/gl-mapmatching, which is based on the methodology described in Haunert and Budig (2012)
 (https://doi.org/10.1145/2424321.2424402) and Newson and Krumm (2009) (https://doi.org/10.1145/1653771.1653818).
 
-## Installation
-1. Clone the gl-full repository from https://gitlab.igg.uni-bonn.de/graphlibrary/gl-full.git
-2. Replace the remote repository for the gl-mapmatching module with this one
-3. Run using the main method in matching/main/MatchingMain.java. Use the -h flag to see instructions and arguments.
-
-
 ## About
 This repository extends Haunert and Forsch's work to:
 * Match to both non-directed and directed graphs.
@@ -22,10 +16,11 @@ This repository extends Haunert and Forsch's work to:
 * Improve matching accuracy at the start point by using a larger matching weight
   (i.e., penalty for being further from a link) at the start point relative to
   other points along the trajectory.
-* Incorporate speed penalties into transition cost based on the discrepancy between expected distance and network distance.
-  This avoids matching to trajectories that cover implausible distances between timestamps, thereby avoiding exceptionally
+* Incorporate penalties into transition cost to account for discrepancies between euclidean and network distance.
+  This avoids matching to trajectories that cover implausible distances between waypoionts, thereby avoiding exceptionally
   high speeds in downstream analysis. These penalties are created if the input trajectories are provided as a csv file with 
-  corresponding timestamps and speeds for each waypoint.
+  corresponding timestamps for each waypoint.
+* Incorporate penalties to account for GNSS drift by comparing the matching lines from each point to the next
 * Allow modifying link weights based on their attributes. This enables the matching algorithm to favour or avoid
   certain routes when multiple options align with the trajectory (e.g., cycling paths parallel to roads).
   The adjustments are specified in an optional text file read in as an input using the flag "-adj".
@@ -39,4 +34,3 @@ highway = footway 1.5
 
 # Work in progress:
 * Create flag to specify directed / non-directed graph (currently must comment in/out the relevant section of code)
-* Make independant and eliminate reliance on old "gl-*" libraries

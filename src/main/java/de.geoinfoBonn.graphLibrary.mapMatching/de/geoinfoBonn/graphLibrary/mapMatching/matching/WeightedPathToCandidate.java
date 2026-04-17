@@ -3,9 +3,9 @@ package de.geoinfoBonn.graphLibrary.mapMatching.matching;
 import java.awt.geom.Point2D;
 import java.util.List;
 
-import de.geoinfoBonn.graphLibrary.core.generic.DiGraph.DiGraphArc;
-import de.geoinfoBonn.graphLibrary.core.generic.DiGraph.DiGraphNode;
-import de.geoinfoBonn.graphLibrary.core.generic.DoubleWeightDataWithInfo;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.generic.DiGraph.DiGraphArc;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.generic.DiGraph.DiGraphNode;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.generic.DoubleWeightDataWithInfo;
 
 public class WeightedPathToCandidate<I> {
 	private List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> p;

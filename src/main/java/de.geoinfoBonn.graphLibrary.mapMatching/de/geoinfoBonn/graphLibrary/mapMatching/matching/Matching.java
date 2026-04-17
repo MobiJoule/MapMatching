@@ -3,19 +3,21 @@ package de.geoinfoBonn.graphLibrary.mapMatching.matching;
 import java.awt.geom.Line2D;
 import java.awt.geom.Point2D;
 import java.util.*;
+import java.util.List;
 import java.util.Map.Entry;
 
+import de.geoinfoBonn.graphLibrary.mapMatching.io.Road.RoadInfo;
 import org.locationtech.jts.geom.Envelope;
 import org.locationtech.jts.index.strtree.STRtree;
 
-import de.geoinfoBonn.graphLibrary.core.generic.DiGraph;
-import de.geoinfoBonn.graphLibrary.core.generic.DiGraph.DiGraphArc;
-import de.geoinfoBonn.graphLibrary.core.generic.DiGraph.DiGraphNode;
-import de.geoinfoBonn.graphLibrary.core.generic.DoubleWeightDataWithInfo;
-import de.geoinfoBonn.graphLibrary.core.geometry.Calculations;
-import de.geoinfoBonn.graphLibrary.core.geometry.PointComparator;
-import de.geoinfoBonn.graphLibrary.core.shortestPath.Dijkstra;
-import de.geoinfoBonn.graphLibrary.core.shortestPath.MultiTargetNodeVisitor;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.generic.DiGraph;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.generic.DiGraph.DiGraphArc;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.generic.DiGraph.DiGraphNode;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.generic.DoubleWeightDataWithInfo;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.geometry.Calculations;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.geometry.PointComparator;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.shortestPath.Dijkstra;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.shortestPath.MultiTargetNodeVisitor;
 import org.tinylog.Logger;
 
 public class Matching<I> {
@@ -37,13 +39,18 @@ public class Matching<I> {
 	public static boolean ADD_OFFROAD_CANDIDATE = true;
 	public static boolean VERBOSE = false;
 
+	public static double DEVIATION_PENALTY_FACTOR = 1.4; // must be >= 1
+	public static double DISTANCE_PENALTY_FACTOR = 0.6; // must be <= 1
+
 	private static final PointComparator POINT_LEX_ORDER = new PointComparator();
 
 	/**
 	 * @param input_graph a geometric graph representing the road network
 	 * @param input_track input track
 	 */
-	public Matching(DiGraph<Point2D, DoubleWeightDataWithInfo<I>> input_graph, Track input_track) {
+	public Matching(DiGraph<Point2D, DoubleWeightDataWithInfo<I>> input_graph,
+					Track input_track,
+					I offroadLinkInfo) {
 
 		if (Matching.VERBOSE) {
 			System.out.println("#################################################################");
@@ -163,7 +170,7 @@ public class Matching<I> {
 					for (CandidateMatch<I> c2 : candidates.get(i + 1)) {
 						Point2D p2 = c2.getMapPoint();
 						g.addArc(c1.getNode(), c2.getNode(),
-								new DoubleWeightDataWithInfo<>(OFF_ROAD_WEIGHT * p1.distance(p2), null));
+								new DoubleWeightDataWithInfo<>(OFF_ROAD_WEIGHT * p1.distance(p2), offroadLinkInfo));
 					}
 				}
 				if (i > 0) {
@@ -171,7 +178,7 @@ public class Matching<I> {
 						if (c0.mapSegment != null) {
 							Point2D p0 = c0.getMapPoint();
 							g.addArc(c0.getNode(), c1.getNode(),
-									new DoubleWeightDataWithInfo<>(OFF_ROAD_WEIGHT * p0.distance(p1), null));
+									new DoubleWeightDataWithInfo<>(OFF_ROAD_WEIGHT * p0.distance(p1), offroadLinkInfo));
 						}
 					}
 				}
@@ -218,12 +225,15 @@ public class Matching<I> {
 				}
 			}
 
+			// Current and next trajectory point
+			Point2D currPoint = input_track_points.get(i);
+			Point2D nextPoint = input_track_points.get(i + 1);
+
 			// Compute expected distance if speeds are available
-			Double expected_distance = null;
+			Double dt = null;
 			Double modelled_speed = input_track.getSpeed(i+1);
 			if (modelled_speed != null) {
-				double dt = input_track.getDiffTime(i+1).doubleValue();
-				expected_distance = modelled_speed*dt;
+				dt = input_track.getDiffTime(i+1).doubleValue();
 			}
 
 			// define targets
@@ -239,33 +249,132 @@ public class Matching<I> {
 			LinkedList<WeightedPathToCandidate<I>> myPathList = new LinkedList<>();
 			for (CandidateMatch<I> cm : candidates.get(i + 1)) {
 				List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> p = g.toNodeList(dijkstra.getPath(cm.getNode().getId()));
-				double cost = dijkstra.getDistance(cm.getNode());
+				double cost = dijkstra.getCost(cm.getNode());
 
-				// Distance-speed penalty term todo: avoid having link-type penalties as part of the map distance
-				if (expected_distance != null) {
-					double c_dummy = dijkstra.getDistance(p.get(1));
-					double map_distance = cost - c_dummy;
-					double speed_penalty = Math.abs(map_distance - expected_distance);
+				// Get current and next match
+				Point2D currMatch = p.get(1).getNodeData();
+				Point2D nextMatch = p.getLast().getNodeData();
 
-					// Alternatives (for testing - some work very poorly)
-//					double speed_penalty = Math.max(0.,2*(map_distance - 2 * expected_distance)); // C
-//					double speed_penalty = Math.max(0.,map_distance - 2* expected_distance); // D [2nd best]
-//					double speed_penalty = Math.max(0.,3*(map_distance - 2* expected_distance)); // E
-//					double speed_penalty = Math.max(0, 2 * (map_distance - expected_distance)); // F
-//					double speed_penalty = Math.pow(Math.max(0.,map_distance - 2 * expected_distance),1.2); // G
-//					double speed_penalty = Math.pow(Math.max(0.,map_distance - expected_distance),1.2); // H
-//					double speed_penalty = Math.pow(Math.max(0.,map_distance - 2 * expected_distance),1.5); // I
-//					double speed_penalty = Math.max(0.,map_distance - expected_distance); // J
-//				 	double speed_penalty = Math.abs(map_distance - expected_distance); // K [best]
-//					double speed_penalty = 2 * Math.abs(map_distance - expected_distance); // L
-//					double speed_penalty = 1.5 * Math.abs(map_distance - expected_distance); // M
+				//Get path arcs
+				LinkedList<DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>>> pathArcs = getPathArcs(p);
 
-					// Add speed penalty to cost
-					cost += speed_penalty;
-
-					// For debugging only
-//					Logger.info("i=" + i + "/" + candidates.size() + " p0: " + p.get(1).getId() + " dummy: " + c_dummy + " dx: " + map_distance + " v_mod: " + modelled_speed + " penalty: " + speed_penalty + " cost: " + cost);
+				// Test cost
+				double costDummy = dijkstra.getCost(p.get(1));
+				double costNet = cost - costDummy;
+				double costNetTest = pathArcs.stream().mapToDouble(
+						a -> a.getArcData().getValue()).sum();
+				if (Math.abs(costNet - costNetTest) > 0.001d) {
+					throw new RuntimeException("Cost test failed! costMap="+costNet+". costMapTest="+costNetTest+
+							". This is probably happening because costs are running out of control...");
 				}
+
+				// Initialise penalties
+				double deviation_penalty = 0.;
+				double distance_penalty = 0.;
+
+				// DEVIATION PENALTY (FOR SMOOTHED TRAJECTORIES ONLY)
+				if (dt != null) {
+
+					// X and Y components of next match vector
+					double bx = nextMatch.getX() - nextPoint.getX();
+					double by = nextMatch.getY() - nextPoint.getY();
+
+					// Network distance distance
+					double networkDistance = pathArcs.stream().mapToDouble(
+							a -> a.getArcData().getValue() /
+									((RoadInfo) a.getArcData().getInfo()).getWeightAdjustment()).sum();
+					double networkDistanceSq = networkDistance * networkDistance;
+
+					// Current match distance
+					double diff_parallel;
+					double diff_perpendicular;
+					double diff_network;
+					if (currMatch.equals(currPoint)) {
+						diff_parallel = bx * bx + by * by;
+						diff_perpendicular = 0.;
+						diff_network = networkDistanceSq;
+					} else {
+
+						// Euclidean distance (squared)
+						double euclideanDistanceSq = currPoint.distanceSq(nextPoint);
+
+						// X and Y components of current match vector
+						double ax = currMatch.getX() - currPoint.getX();
+						double ay = currMatch.getY() - currPoint.getY();
+
+						// Current match vector distance (squared)
+						double a2 = ax * ax + ay * ay;
+
+						// Parallel and orthogonal distance (squared) of next match vector, projected to current vector
+						double dot = ax * bx + ay * by;
+						double det = ay * bx - ax * by;
+
+						double bp2 = dot * dot / a2;
+						double br2 = det * det / a2;
+
+						if (Math.abs(Math.atan2(det,dot)) > Math.PI / 2) {
+							bp2 *= -1;
+						}
+
+						// Perpendicular and parallel components
+						diff_parallel = Math.abs(a2 - bp2);
+						diff_perpendicular = Math.abs(br2);
+
+						// Network vs euclidean distance
+						diff_network = Math.abs(networkDistanceSq - euclideanDistanceSq);
+
+//						if (networkDistanceSq > euclideanDistanceSq) {
+//							boolean hasOffroad = pathArcs.stream().anyMatch(a -> a.getArcData().getInfo().equals(offroadLinkInfo));
+//
+//							if (!hasOffroad) {
+//								double excess = networkDistance - Math.sqrt(euclideanDistanceSq);
+//
+//								DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>> firstArc = pathArcs.getFirst();
+//								DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>> lastArc = pathArcs.getLast();
+//
+//								// Match distance
+//								double d_curr = Math.min(15., currPoint.distance(currMatch));
+//								double d_next = Math.min(15., nextPoint.distance(nextMatch));
+//
+//								// Angle between vectors
+//								double cx = firstArc.getTarget().getNodeData().getX() - firstArc.getSource().getNodeData().getX();
+//								double cy = firstArc.getTarget().getNodeData().getY() - firstArc.getSource().getNodeData().getY();
+//								double dx = lastArc.getTarget().getNodeData().getX() - lastArc.getSource().getNodeData().getX();
+//								double dy = lastArc.getTarget().getNodeData().getY() - lastArc.getSource().getNodeData().getY();
+//								double angle = Math.atan2(cx * dy - dx * cy, cx * dx + cy * dy);
+//
+//								// Turning allowance for right turns only
+//								if (angle < 0) {
+//									angle = Math.max(angle, Math.PI / -2.);
+//									networkDistance += Math.max(-1 * excess, (d_curr + d_next) * Math.tan(angle / 2));
+//									diff_network = networkDistance*networkDistance - euclideanDistanceSq;
+//								}
+//							}
+//						}
+
+					}
+
+					deviation_penalty = (diff_parallel + diff_perpendicular) * CANDIDATE_COST_WEIGHT * DEVIATION_PENALTY_FACTOR / dt;
+					distance_penalty = diff_network * CANDIDATE_COST_WEIGHT * DISTANCE_PENALTY_FACTOR;
+				}
+
+				// NETWORK DISTANCE PENALTY (ONLY WHEN EXPECTED DISTANCE AVAILABLE)
+				// This doesn't really do anything. Square before taking difference instead...
+//				if (expected_distance != null) {
+//					double network_distance = pathArcs.stream().mapToDouble(
+//							a -> a.getArcData().getValue() /
+//									((RoadInfo) a.getArcData().getInfo()).getWeightAdjustment()).sum();
+//					double excess = network_distance - expected_distance;
+//					distance_penalty = excess * excess * CANDIDATE_COST_WEIGHT * DISTANCE_PENALTY_FACTOR;
+//				}
+
+				// Update cost
+				cost += deviation_penalty + distance_penalty;
+
+//				// For debugging only
+//				Logger.info("i=" + i + "/" + candidates.size() + " p0: " + p.get(1).getId() + " dummy: " +
+//						costDummy + " costNet: " + costNet + " distNet: " + network_distance + " deviation_penalty: " +
+//						deviation_penalty + " distance_penalty: " + distance_penalty);
 
 				// Store path
 				WeightedPathToCandidate<I> wp = new WeightedPathToCandidate<>(p, cost, cm);
@@ -330,7 +439,7 @@ public class Matching<I> {
 			if (u != null) {
 				// add arc uv to list
 				DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>> uv = g.getArc(u, v);
-				if (uv != null && !u.getNodeData().equals(v.getNodeData()))
+				if (uv != null && u.getNodeData() != null && !u.getNodeData().equals(v.getNodeData()))
 					pathArcs.add(uv);
 			}
 			u = v;
@@ -347,54 +456,23 @@ public class Matching<I> {
 	 * @return for each track point a list of candidate matches
 	 */
 	private ArrayList<LinkedList<CandidateMatch<I>>> getBestKCandidatesForEachTrackPoint(STRtree segments, ArrayList<Point2D> gps_track) {
-		ArrayList<LinkedList<CandidateMatch<I>>> allCandidates = new ArrayList<>();
+
+		// Track size
+		int track_size = gps_track.size();
+
+		// Create candidates
+		ArrayList<LinkedList<CandidateMatch<I>>> allCandidates = new ArrayList<>(track_size);
 		for (Point2D gps_point : gps_track) {
 			LinkedList<CandidateMatch<I>> candidates = getBestKCandidatesForTrackPoint(segments, gps_point);
 			allCandidates.add(candidates);
 		}
+//		Logger.debug("Preliminary candidates: " + allCandidates.stream().map(LinkedList::size).reduce(0, Integer::sum));
 
-		// Compute candidates of other trajectory points to add to each trajectory point
-		Map<Integer, LinkedList<CandidateMatch<I>>> newCandidates = new HashMap<>();
-		for(int i = 0 ; i < allCandidates.size() ; i++) {
-			for(CandidateMatch<I> candidate : allCandidates.get(i)) {
-				Point2D map_point = candidate.getMapPoint();
-
-				if(!map_point.equals(candidate.getSegment().getSource().getNodeData()) &&
-						!map_point.equals(candidate.getSegment().getTarget().getNodeData())) {
-
-					long segmentId = (long) candidate.getSegmentType();
-
-					for(int j = 0 ; j < gps_track.size(); j++) {
-						if(i != j) {
-							if(allCandidates.get(j).stream().anyMatch(c -> c.getSegmentType().equals(segmentId) &&
-									!c.getMapPoint().equals(c.getSegment().getSource().getNodeData()) &&
-									!c.getMapPoint().equals(c.getSegment().getTarget().getNodeData()))) {
-								Point2D gps_point = gps_track.get(j);
-								if(Math.hypot(gps_point.getX() - map_point.getX(), gps_point.getY() - map_point.getY()) <= RADIUS) {
-									CandidateMatch<I> cm = new CandidateMatch<>(gps_point, map_point, candidate.getSegment());
-									newCandidates.computeIfAbsent(j,m -> new LinkedList<>()).add(cm);
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-
-		// add new candidates
-		if(VERBOSE) {
-			Logger.info("Had " + allCandidates.stream().map(LinkedList::size).reduce(0, Integer::sum) + " candidates");
-		}
-		for(Map.Entry<Integer, LinkedList<CandidateMatch<I>>> entry : newCandidates.entrySet()) {
-			allCandidates.get(entry.getKey()).addAll(entry.getValue());
-		}
-		if(VERBOSE) {
-			Logger.info("Added " + newCandidates.values().stream().map(LinkedList::size).reduce(0, Integer::sum) + " new candidates");
-			Logger.info("FINALLY HAS " + allCandidates.stream().map(LinkedList::size).reduce(0, Integer::sum) + " CANDIDATES");
-		}
+		// Radius2
+		double radius2 = RADIUS * RADIUS;
 
 
-		// sort candidates by distance
+		// Setup sorter
 		Comparator<CandidateMatch<I>> myCandidateComp = (a, b) -> {
 			if (a.getMapPoint().distance(a.getGpsPoint()) < b.getMapPoint().distance(b.getGpsPoint()))
 				return -1;
@@ -403,17 +481,76 @@ public class Matching<I> {
 			return POINT_LEX_ORDER.compare(a.getMapPoint(), b.getMapPoint());
 		};
 
-		for (LinkedList<CandidateMatch<I>> candidates : allCandidates) {
-            candidates.sort(myCandidateComp);
-
-			// remove all but the best k candidates
-			while (candidates.size() > MAX_CAND_N)
-				candidates.removeLast();
-        }
-		if(VERBOSE) {
-			Logger.info("After removal: " + allCandidates.stream().map(LinkedList::size).reduce(0, Integer::sum) + " candidates.");
+		// Create new adopted candidates
+		Map<Integer, LinkedList<CandidateMatch<I>>> allAdoptedCandidates = new HashMap<>();
+		for(int i = 0 ; i < track_size ; i++) {
+//			Logger.debug("Running adoption for track point " + i + " / " + track_size);
+			for (CandidateMatch<I> candidate : allCandidates.get(i)) {
+				Point2D map_point = candidate.getMapPoint();
+				if (!map_point.equals(candidate.getSegment().getSource().getNodeData()) &&
+						!map_point.equals(candidate.getSegment().getTarget().getNodeData())) {
+					I segmentInfo = candidate.getSegmentInfo();
+					for (int j = 0; j < track_size; j++) {
+						if (i != j) {
+							if (allCandidates.get(j).stream().anyMatch(c -> c.getSegmentInfo().equals(segmentInfo) &&
+									!c.getMapPoint().equals(c.getSegment().getSource().getNodeData()) &&
+									!c.getMapPoint().equals(c.getSegment().getTarget().getNodeData()))) {
+								Point2D gps_point = gps_track.get(j);
+								double vx = gps_point.getX() - map_point.getX();
+								double vy = gps_point.getY() - map_point.getY();
+								if (vx*vx + vy*vy <= radius2) {
+									CandidateMatch<I> cm = new CandidateMatch<>(gps_point, map_point, candidate.getSegment());
+									allAdoptedCandidates.computeIfAbsent(j, m -> new LinkedList<>()).add(cm);
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 
+		// Sort and remove candidates above limit
+		for(int i = 0 ; i < track_size ; i++) {
+			LinkedList<CandidateMatch<I>> candidates = allCandidates.get(i);
+			LinkedList<CandidateMatch<I>> adoptedCandidates = allAdoptedCandidates.get(i);
+
+			if (adoptedCandidates != null) {
+
+				// Check how many adopted candidates can be added
+				int original_candidates = candidates.size();
+				int allowed_insertions = MAX_CAND_N - original_candidates;
+
+				// Reduce size of adopted candidates list to be within limit
+				if (allowed_insertions <= 0) {
+					Logger.warn("Candidates for track point " + i + " exceed allowed amount (" + original_candidates + ")\n" +
+							"You have a dense network. Consider increasing candidate allowance with input option '-k' (currently " + MAX_CAND_N + ").");
+				} else if (adoptedCandidates.size() > allowed_insertions) {
+
+					// Sort adopted candidates
+					adoptedCandidates.sort(myCandidateComp);
+
+					// Remove adopted candidates that exceed limit
+					while (adoptedCandidates.size() > allowed_insertions) {
+						adoptedCandidates.removeLast();
+					}
+				}
+
+				// Add adopted candidates
+				candidates.addAll(adoptedCandidates);
+			}
+
+			// Sort all candidates
+			candidates.sort(myCandidateComp);
+
+			// Remove candidates exceeding limit
+			while (candidates.size() > MAX_CAND_N) {
+				candidates.removeLast();
+			}
+		}
+
+		// add new candidates
+//		Logger.debug("Adopted candidates: " + allAdoptedCandidates.values().stream().map(LinkedList::size).reduce(0, Integer::sum));
+//		Logger.debug("Total candidates: " + allCandidates.stream().map(LinkedList::size).reduce(0, Integer::sum));
 
 		return allCandidates;
 	}

@@ -2,7 +2,7 @@ package de.geoinfoBonn.graphLibrary.mapMatching.matching;
 
 import java.util.Comparator;
 
-import de.geoinfoBonn.graphLibrary.core.geometry.PointComparator;
+import de.geoinfoBonn.graphLibrary.mapMatching.core.geometry.PointComparator;
 
 public class DistanceComperator<I> implements Comparator<CandidateMatch<I>> {
 
