@@ -110,7 +110,7 @@ public class Track {
 		return speeds == null ? null : speeds.get(i);
 	}
 
-	public Double getCovar(int i) {
+	public Double getStdev(int i) {
 		return covars == null ? null : covars.get(i);
 	}
 
@@ -184,12 +184,11 @@ public class Track {
                 } catch (Exception ex) {
                     throw new RuntimeException(ex);
                 }
-
 			} else if (filename.endsWith(".csv")) {
-				Map<Long, ArrayList<Point2D>> pointsMap = new HashMap<>();
+				Map<Long, ArrayList<Point2D>> pointMap = new HashMap<>();
 				Map<Long, ArrayList<Long>> timesMap = new HashMap<>();
-				Map<Long, ArrayList<Double>> speedsMap = new HashMap<>();
-				Map<Long, ArrayList<Double>> covarsMap = new HashMap<>();
+				Map<Long, ArrayList<Double>> speedMap = new HashMap<>();
+				Map<Long, ArrayList<Double>> stdevMap = new HashMap<>();
 
 				try (Reader reader = new FileReader(filename);
 					 CSVParser csvParser = new CSVParser(reader,
@@ -201,18 +200,18 @@ public class Track {
 						 double x = Double.parseDouble(record.get("x"));
 						 double y = Double.parseDouble(record.get("y"));
 						 double v = Double.parseDouble(record.get("v"));
-						 double covar = Double.parseDouble(record.get("covar"));
+						 double stdev = Double.parseDouble(record.get("stdev"));
 
-						 pointsMap.computeIfAbsent(id, k -> new ArrayList<>()).add(new Point2D.Double(x, y));
+						 pointMap.computeIfAbsent(id, k -> new ArrayList<>()).add(new Point2D.Double(x, y));
 						 timesMap.computeIfAbsent(id, k -> new ArrayList<>()).add(t);
-						 speedsMap.computeIfAbsent(id, k -> new ArrayList<>()).add(v);
-						 covarsMap.computeIfAbsent(id, k -> new ArrayList<>()).add(covar);
+						 speedMap.computeIfAbsent(id, k -> new ArrayList<>()).add(v);
+						 stdevMap.computeIfAbsent(id, k -> new ArrayList<>()).add(stdev);
 					 }
 
 					 Logger.debug("nothing");
 
-					for (Long id : pointsMap.keySet()) {
-						trajectories.add(new Track(id, pointsMap.get(id), timesMap.get(id), speedsMap.get(id), covarsMap.get(id)));
+					for (Long id : pointMap.keySet()) {
+						trajectories.add(new Track(id, pointMap.get(id), timesMap.get(id), speedMap.get(id), stdevMap.get(id)));
 					}
 				 }
 			} else {
@@ -225,7 +224,7 @@ public class Track {
 
 	}
 
-	private static long getIdAsLong(String idAttributeName, SimpleFeature myFeature) {
+	public static long getIdAsLong(String idAttributeName, SimpleFeature myFeature) {
 		Object idObject = myFeature.getAttribute(idAttributeName);
 		if(idObject instanceof Long) {
 			return (long) idObject;

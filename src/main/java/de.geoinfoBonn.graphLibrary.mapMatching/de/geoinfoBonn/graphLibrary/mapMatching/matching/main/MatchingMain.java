@@ -28,38 +28,13 @@ import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 import org.geotools.geopkg.FeatureEntry;
 import org.geotools.geopkg.GeoPackage;
 
+import static de.geoinfoBonn.graphLibrary.mapMatching.matching.Track.getIdAsLong;
 import static de.geoinfoBonn.graphLibrary.mapMatching.matching.main.AbstractMain.getOptionalArg;
 import static de.geoinfoBonn.graphLibrary.mapMatching.matching.main.AbstractMain.containsOptionalArg;
 
 //@formatter:off
 /**
  * Executable for map matching.
- *
- * Mandatory arguments:
- * 1) path to road shapefile (must be program first argument) [string]
- * 2) path to trajectory shapefile (must be second program argument) [string]
- *
- * Optional arguments:
- *  -t  , number of threads for multithreaded matching (default: 6)
- *  -n  , number of trajectories in each batch (default: 1000)
- *  -h  , flag to (just) print help
- *  -r  , parameter for radius (default: 25.0) [double]
- *  -k  , parameter for maximum number of candidates (default: INF) [int]
- *  -c  , parameter for candidate cost weight (default: 0.01) [double]
- *  -o  , use offroad candidates? (default: true) [boolean]
- *  -w  , parameter for offroad weight (default: 1.5) [double]
- *  -v  , flag to print verbose output
- *  -tid, name of trajectory ID column in trajectory data [string]
- *  -select, for processing only selected trajectory IDs (comma-separated)
- *  -min, minimum trajectory ID to compute
- *  -max, maximum trajectory ID to compute
- *  -nid, name of link ID column in road data [string]
- *  -nwt, name of weight column in road data [string]
- *  -ma , include matches in output
- *  -ch , include chunks in output
- *  -chp, include chunk paths in output
- *  -gp , include global paths in output
- *  -s  , include segments in output
  *
  * @author Jan-Henrik Haunert
  * @author Axel Forsch (forsch@igg.uni-bonn.de)
@@ -78,19 +53,24 @@ public class MatchingMain {
 			printHelpText();
 			System.exit(0);
 		}
-		Matching.VERBOSE = containsOptionalArg(args, "-v");
+
+		// PROCESS ARGUMENTS
+		// Core matching parameters (radius, max candidates, candidate cost weight)
+		Matching.VERBOSE = containsOptionalArg(args, "-v"); // todo: verbose/debug doesn't work
 		if (getOptionalArg(args, "-r") != null)
 			Matching.RADIUS = Double.parseDouble(getOptionalArg(args, "-r"));
 		if (getOptionalArg(args, "-k") != null)
 			Matching.MAX_CAND_N = Integer.parseInt(getOptionalArg(args, "-k"));
-		if (getOptionalArg(args, "-w") != null)
-			Matching.OFF_ROAD_WEIGHT = Double.parseDouble(getOptionalArg(args, "-w"));
 		if (getOptionalArg(args, "-c") != null)
 			Matching.CANDIDATE_COST_WEIGHT = Double.parseDouble(getOptionalArg(args, "-c"));
-		if (getOptionalArg(args, "-o") != null)
-			Matching.ADD_OFFROAD_CANDIDATE = Boolean.parseBoolean(getOptionalArg(args, "-o"));
 
-		// Which outputs to write
+		// Regarding offroad candidates
+		if (getOptionalArg(args, "-off") != null)
+			Matching.ADD_OFFROAD_CANDIDATE = Boolean.parseBoolean(getOptionalArg(args, "-off")); // was -o
+		if (getOptionalArg(args, "-offwt") != null)
+			Matching.OFF_ROAD_WEIGHT = Double.parseDouble(getOptionalArg(args, "-offwt")); // was -w
+
+		// Regarding which outputs to write
 		boolean writeMatches = containsOptionalArg(args, "-ma");
 		boolean writeChunks = containsOptionalArg(args, "-ch");
 		boolean writeChunkPaths = containsOptionalArg(args, "-chp");
@@ -106,21 +86,27 @@ public class MatchingMain {
 		// The input network attribute unique link ID
 		String linkIdName = getOptionalArg(args, "-nid"); // was "-t"
 
-		// Partitions and threads
+		// Regarding partitioning and multithreading
 		String threadsInput = getOptionalArg(args, "-t");
 		String partitionsInput = getOptionalArg(args, "-n");
 		int numberOfThreads = threadsInput == null ? DEFAULT_NUMBER_OF_THREADS : Integer.parseInt(threadsInput);
 		int partitionSize = partitionsInput == null ? DEFAULT_PARTITION_SIZE : Integer.parseInt(partitionsInput);
 
-		// Weight adjustments
-		String weightAdjustmentsFile = getOptionalArg(args, "-adj");
+		// Deviation and distance penalty factors
+		if (getOptionalArg(args, "-pdev") != null)
+			Matching.DEVIATION_PENALTY_FACTOR = Double.parseDouble(getOptionalArg(args, "-pdev"));
+		if (getOptionalArg(args, "-pdist") != null)
+			Matching.DISTANCE_PENALTY_FACTOR = Double.parseDouble(getOptionalArg(args, "-pdist"));
+
+		// Link weight adjustments
+		String weightAdjustmentsFile = getOptionalArg(args, "-plink");
 		final Map<String,Double> weightAdjustments = (weightAdjustmentsFile == null) ? null : readWeightAdjustments(weightAdjustmentsFile);
 
 		// InfoGenerator
 		Function<SimpleFeature, RoadInfo> roadInfoGenerator = feature -> {
 
 			// RoadId
-			long roadId = (long) feature.getAttribute(linkIdName);
+			long roadId = getIdAsLong(linkIdName, feature);
 
 			// Weight
 			double weight = 1.;
@@ -153,7 +139,6 @@ public class MatchingMain {
 		// Read trajectories
 		String trajectoryIdName = getOptionalArg(args, "-tid");
 		List<Track> trajectories = Track.importTrajectories(args[1],trajectoryIdName);
-		Logger.info("Number of trajectories in input file: " + trajectories.size());
 
 		// Filter trajectories
 		String selectedIds = getOptionalArg(args, "-select");
@@ -163,7 +148,6 @@ public class MatchingMain {
 		if(selectedIds != null) {
 			Set<Long> includedIds = Arrays.stream(selectedIds.split(",")).map(Long::parseLong).collect(Collectors.toSet());
 			trajectories = trajectories.stream().filter(f -> includedIds.contains(f.getId())).collect(Collectors.toList());
-			Logger.info("Selected " + trajectories.size() + " trajectories with IDs: " + trajectories.size());
 			if (minInput != null || maxInput != null) {
 				throw new RuntimeException("For filtering IDs, shouldn't combine -select and -min/max");
 			}
@@ -171,17 +155,50 @@ public class MatchingMain {
 			long min = minInput == null ? Long.MIN_VALUE : Long.parseLong(minInput);
 			long max = maxInput == null ? Long.MAX_VALUE : Long.parseLong(maxInput);
 			trajectories = trajectories.stream().filter(f -> f.getId() >= min && f.getId() <= max).collect(Collectors.toList());
-			Logger.info("Trajectories after filtering trajectory IDs: " + trajectories.size());
 		}
-
-		// Print arguments
-		printArguments(args, partitionSize, numberOfThreads, linkDistId, linkIdName, trajectoryIdName, minInput, maxInput,
-				writeMatches,writeChunks,writeChunkPaths,writeGlobalPaths,writeSegments);
 
 		// Prepare trajectory data
 		Iterable<List<Track>> partitions = Iterables.partition(trajectories, partitionSize);
 		long numberOfPartitions = StreamSupport.stream(partitions.spliterator(), false).count();
-		Logger.info("Split trajectories file into " + numberOfPartitions + " partitions containing " + partitionSize + " trajectories each.");
+
+
+		// STATUS UPDATE BEFORE MATCHING
+		Logger.info("Number of trajectories in input file: " + trajectories.size());
+		Logger.info("Program arguments:");
+		// Core parameters
+		Logger.info(" - search radius:           " + Matching.RADIUS);
+		Logger.info(" - max. num. of candidates: " + Matching.MAX_CAND_N);
+		Logger.info(" - candidate cost weight:   " + Matching.CANDIDATE_COST_WEIGHT);
+		Logger.info(" - use offroad candidates?  " + Matching.ADD_OFFROAD_CANDIDATE);
+		if (Matching.ADD_OFFROAD_CANDIDATE)
+			Logger.info(" - offroad weight:      " + Matching.OFF_ROAD_WEIGHT);
+		// Other penalty factors
+		Logger.info(" - distance penalty factor: " + Matching.DISTANCE_PENALTY_FACTOR);
+		Logger.info(" - deviation penalty factor: " + Matching.DEVIATION_PENALTY_FACTOR);
+		// Computational parameters
+		Logger.info(" - number of threads:       " + numberOfThreads);
+		Logger.info(" - batch size:              " + partitionSize);
+		// Inputs
+		Logger.info(" - road input data:         " + args[0]);
+		Logger.info(" - trajectory input data:   " + args[1]);
+		// Input column names
+		Logger.info(" - network ID column:       " + linkIdName);
+		Logger.info(" - network weight column:   " + linkDistId);
+		Logger.info(" - trajectory ID column:    " + trajectoryIdName);
+		// Output details
+		Logger.info(" - output Matches?      " + writeMatches);
+		Logger.info(" - output Chunks?       " + writeChunks);
+		Logger.info(" - output ChunkPaths?   " + writeChunkPaths);
+		Logger.info(" - output GlobalPaths?  " + writeGlobalPaths);
+		Logger.info(" - output Segments?     " + writeSegments);
+		// Debugging / other
+		if (selectedIds != null) {
+			Logger.info(" - selected " + trajectories.size() + " trajectories with IDs: " + trajectories.stream().map(t -> Long.toString(t.getId())).collect(Collectors.joining(",")));
+		}
+		if (minInput != null || maxInput != null) {
+			Logger.info(" - selected " + trajectories.size() + " trajectories between ID range " + minInput + " and " + maxInput);
+		}
+		Logger.info("- split trajectories into " + numberOfPartitions + " partitions containing " + partitionSize + " trajectories each.");
 
 		// Initialise output lists
 		ArrayList<Track> paths = new ArrayList<>(partitionSize);
@@ -227,7 +244,7 @@ public class MatchingMain {
 					}
 				} catch (IOException e) {
 					System.out.println(e.getMessage());
-					Logger.info("Could not create spatial indexes!");
+					Logger.warn("Could not create spatial indexes!");
 				}
 
 				// Close file
@@ -324,32 +341,6 @@ public class MatchingMain {
 
 	}
 
-	private static void printArguments(String[] args, int partitionSize, int numberOfThreads, String netWtColName,
-									   String netIdColName, String trajIdColName, String minInput, String maxInput,
-									   boolean writeMatches, boolean writeChunks, boolean writeChunkPaths, boolean writeGlobalPaths, boolean writeSegments) {
-		System.out.println("Program arguments:");
-		System.out.println(" - batch size:              " + partitionSize);
-		System.out.println(" - number of threads:       " + numberOfThreads);
-		System.out.println(" - road data:               " + args[0]);
-		System.out.println(" - trajectory data:         " + args[1]);
-		System.out.println(" - radius:                  " + Matching.RADIUS);
-		System.out.println(" - max. num. of candidates: " + Matching.MAX_CAND_N);
-		System.out.println(" - candidate cost weight:   " + Matching.CANDIDATE_COST_WEIGHT);
-		System.out.println(" - use offroad candidates?  " + Matching.ADD_OFFROAD_CANDIDATE);
-		if (Matching.ADD_OFFROAD_CANDIDATE)
-			System.out.println(" - offroad weight:         " + Matching.OFF_ROAD_WEIGHT);
-		System.out.println(" - network weight column:   " + netWtColName);
-		System.out.println(" - network ID column:       " + netIdColName);
-		System.out.println(" - trajectory ID column:    " + trajIdColName);
-		System.out.println(" - min trajectory ID to process  :   " + minInput);
-		System.out.println(" - max trajectory ID to process :   " + maxInput);
-		System.out.println(" - output Matches?      " + writeMatches);
-		System.out.println(" - output Chunks?       " + writeChunks);
-		System.out.println(" - output ChunkPaths?   " + writeChunkPaths);
-		System.out.println(" - output GlobalPaths?  " + writeGlobalPaths);
-		System.out.println(" - output Segments?     " + writeSegments);
-	}
-
 	private static void printHelpText() {
 		System.out.println("Executable for map matching.");
 		System.out.println();
@@ -358,28 +349,35 @@ public class MatchingMain {
 		System.out.println("2) path to trajectory shapefile (must be second program argument) [string] ");
 		System.out.println();
 		System.out.println("Optional arguments:");
+		// Core matching parameters
+		System.out.println("-r  , search radius (default: 100.0) [double]");
+		System.out.println("-k  , maximum number of candidates per trajectory point (default: INTEGER MAX VALUE) [int]");
+		System.out.println("-c  , candidate cost weight (default: 0.01) [double]");
+		System.out.println("-off  , use offroad candidates? (default: true) [boolean]");
+		System.out.println("-offwt  , parameter for offroad weight (default: 15) [double]");
+		// Computational parameters
 		System.out.println("-t  , number of threads for multithreaded matching (default: 6)");
 		System.out.println("-n  , number of trajectories in each batch (default: 1000)");
+		// Additional penalties
+		System.out.println("-pdev  , Penalty for deviation between subsequent matching lines (default: 1.4)");
+		System.out.println("-pdist  , Penalty for deviation between euclidean and network distance  (default: 0.6) [double < 1.0]");
+		System.out.println("-plink , Path to file specifying link-type penalties (default: none) [string]" );
+		// Debugging / other
 		System.out.println("-h  , flag to (just) print help");
-		System.out.println("-r  , parameter for radius (default: 25.0) [double]");
-		System.out.println("-k  , parameter for maximum number of candidates (default: INF) [int]");
-		System.out.println("-c  , parameter for candidate cost weight (default: 0.01) [double]");
-		System.out.println("-o  , use offroad candidates? (default: true) [boolean]");
-		System.out.println("-w  , parameter for offroad weight (default: 1.5) [double]");
 		System.out.println("-v  , flag to print verbose output");
-		System.out.println("-tid, name of trajectory ID column in trajectory data [string]");
+		System.out.println("-select, select trajectories by ID (comma-separated list)");
 		System.out.println("-min, minimum trajectory ID to compute");
 		System.out.println("-max, maximum trajectory ID to compute");
+		// Input data details
 		System.out.println("-nid, name of link ID column in road data [string]");
 		System.out.println("-nwt, name of weight column in road data [string]");
+		System.out.println("-tid, name of trajectory ID column in trajectory data [string]");
+		// Output details
 		System.out.println("-ma , include matches in output");
 		System.out.println("-ch , include chunks in output");
 		System.out.println("-chp, include chunk paths in output");
 		System.out.println("-gp , include global paths in output");
 		System.out.println("-s  , include segments in output");
-		System.out.println();
-		System.out.println("Developed by Prof. Dr.-Ing. Jan-Henrik Haunert and Axel Forsch");
-		System.out.println("Contact: forsch@igg.uni-bonn.de");
 	}
 
 	public static <I> ArrayList<Point2D> extractPointsFromPath(
@@ -408,7 +406,7 @@ public class MatchingMain {
 
 				int sepIdx = recString.lastIndexOf(' ');
 				double weight = Double.parseDouble(recString.substring(sepIdx+1));
-				String criteria = recString.substring(0, sepIdx).replaceAll("(\"[\\w\\h]+\")|\\s*","$1").replaceAll("\"", ""); // This regex removes white space unless within quotes
+				String criteria = recString.substring(0, sepIdx).replaceAll("(\"[\\w\\h]+\")|\\s*","$1").replace("\"", ""); // This regex removes white space unless within quotes
 
 				if(StringUtils.countMatches(criteria,'=') != 1) {
 					throw new RuntimeException("Equals symbol \"=\" should appear exactly once per line in weight adjustments file!");
