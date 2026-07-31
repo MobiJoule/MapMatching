@@ -208,7 +208,7 @@ public class Matching<I> {
 		Dijkstra<Point2D, DoubleWeightDataWithInfo<I>> dijkstra = new Dijkstra<>(g);
 
 		// search paths
-		ArrayList<LinkedList<WeightedPathToCandidate<I>>> allWPs = new ArrayList<>();
+		ArrayList<ArrayList<WeightedPathToCandidate<I>>> allWPs = new ArrayList<>();
 		for (int i = 0; i < candidates.size() - 1; i++) {
 
 			// define source
@@ -230,11 +230,7 @@ public class Matching<I> {
 			Point2D nextPoint = input_track_points.get(i + 1);
 
 			// Compute expected distance if speeds are available
-			Double dt = null;
-			Double modelled_speed = input_track.getSpeed(i+1);
-			if (modelled_speed != null) {
-				dt = input_track.getDiffTime(i+1).doubleValue();
-			}
+			Double dt = input_track.getDiffTime(i+1);
 
 			// define targets
 			LinkedList<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> targets = new LinkedList<>();
@@ -246,12 +242,13 @@ public class Matching<I> {
 			dijkstra.run(dummy, new MultiTargetNodeVisitor<>(targets, dijkstra));
 
 			// memorize solutions of dijkstra
-			LinkedList<WeightedPathToCandidate<I>> myPathList = new LinkedList<>();
+			ArrayList<WeightedPathToCandidate<I>> myPathList = new ArrayList<>(candidates.get(i + 1).size());
 			for (CandidateMatch<I> cm : candidates.get(i + 1)) {
-				List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> p = g.toNodeList(dijkstra.getPath(cm.getNode().getId()));
+				List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> p = dijkstra.getPath(cm.getNode());
 				double cost = dijkstra.getCost(cm.getNode());
 
 				// Get current and next match
+				DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> sourceCandidate = p.get(1);
 				Point2D currMatch = p.get(1).getNodeData();
 				Point2D nextMatch = p.getLast().getNodeData();
 
@@ -265,7 +262,8 @@ public class Matching<I> {
 						a -> a.getArcData().getValue()).sum();
 				if (Math.abs(costNet - costNetTest) > 0.001d) {
 					throw new RuntimeException("Cost test failed! costMap="+costNet+". costMapTest="+costNetTest+
-							". This is probably happening because costs are running out of control...");
+							". This is probably happening because costs are running out of control, " +
+							" or because there are duplicated links (with the same from & to node) with varying costs in the network.");
 				}
 
 				// Initialise penalties
@@ -323,50 +321,11 @@ public class Matching<I> {
 						// Network vs euclidean distance
 						diff_network = Math.abs(networkDistanceSq - euclideanDistanceSq);
 
-//						if (networkDistanceSq > euclideanDistanceSq) {
-//							boolean hasOffroad = pathArcs.stream().anyMatch(a -> a.getArcData().getInfo().equals(offroadLinkInfo));
-//
-//							if (!hasOffroad) {
-//								double excess = networkDistance - Math.sqrt(euclideanDistanceSq);
-//
-//								DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>> firstArc = pathArcs.getFirst();
-//								DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>> lastArc = pathArcs.getLast();
-//
-//								// Match distance
-//								double d_curr = Math.min(15., currPoint.distance(currMatch));
-//								double d_next = Math.min(15., nextPoint.distance(nextMatch));
-//
-//								// Angle between vectors
-//								double cx = firstArc.getTarget().getNodeData().getX() - firstArc.getSource().getNodeData().getX();
-//								double cy = firstArc.getTarget().getNodeData().getY() - firstArc.getSource().getNodeData().getY();
-//								double dx = lastArc.getTarget().getNodeData().getX() - lastArc.getSource().getNodeData().getX();
-//								double dy = lastArc.getTarget().getNodeData().getY() - lastArc.getSource().getNodeData().getY();
-//								double angle = Math.atan2(cx * dy - dx * cy, cx * dx + cy * dy);
-//
-//								// Turning allowance for right turns only
-//								if (angle < 0) {
-//									angle = Math.max(angle, Math.PI / -2.);
-//									networkDistance += Math.max(-1 * excess, (d_curr + d_next) * Math.tan(angle / 2));
-//									diff_network = networkDistance*networkDistance - euclideanDistanceSq;
-//								}
-//							}
-//						}
-
 					}
 
 					deviation_penalty = (diff_parallel + diff_perpendicular) * CANDIDATE_COST_WEIGHT * DEVIATION_PENALTY_FACTOR / dt;
 					distance_penalty = diff_network * CANDIDATE_COST_WEIGHT * DISTANCE_PENALTY_FACTOR;
 				}
-
-				// NETWORK DISTANCE PENALTY (ONLY WHEN EXPECTED DISTANCE AVAILABLE)
-				// This doesn't really do anything. Square before taking difference instead...
-//				if (expected_distance != null) {
-//					double network_distance = pathArcs.stream().mapToDouble(
-//							a -> a.getArcData().getValue() /
-//									((RoadInfo) a.getArcData().getInfo()).getWeightAdjustment()).sum();
-//					double excess = network_distance - expected_distance;
-//					distance_penalty = excess * excess * CANDIDATE_COST_WEIGHT * DISTANCE_PENALTY_FACTOR;
-//				}
 
 				// Update cost
 				cost += deviation_penalty + distance_penalty;
@@ -377,7 +336,7 @@ public class Matching<I> {
 //						deviation_penalty + " distance_penalty: " + distance_penalty);
 
 				// Store path
-				WeightedPathToCandidate<I> wp = new WeightedPathToCandidate<>(p, cost, cm);
+				WeightedPathToCandidate<I> wp = new WeightedPathToCandidate<>(sourceCandidate, cost, cm);
 				myPathList.add(wp);
 			}
 			allWPs.add(myPathList);
@@ -386,7 +345,7 @@ public class Matching<I> {
 		// find last candidate of optimal solution
 		double minTotalCost = Double.POSITIVE_INFINITY;
 		CandidateMatch<I> bestCandidate = null;
-		LinkedList<WeightedPathToCandidate<I>> myPathList = allWPs.get(candidates.size() - 2);
+		ArrayList<WeightedPathToCandidate<I>> myPathList = allWPs.get(candidates.size() - 2);
 		for (WeightedPathToCandidate<I> myPath : myPathList) {
 			double totalCost = myPath.getDistance() + myPath.getTargetCandidate().getCandidateCost();
 			if (totalCost < minTotalCost) {
@@ -406,15 +365,17 @@ public class Matching<I> {
 		matchesArcCount = new LinkedList<>();
 		matchesArcCount.add(0);
 
+		Dijkstra<Point2D, DoubleWeightDataWithInfo<I>> segmentDijkstra = new Dijkstra<>(g);
 		for (int i = candidates.size() - 2; i >= 0; i--) {
 			for (WeightedPathToCandidate<I> myWP : allWPs.get(i)) {
 				if (myWP.getTarget() == lastNode) {
-					List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> subPath = myWP.getPath();
-					subPath.removeFirst(); // remove dummy node
+					DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> sourceCandidate = myWP.getSource();
+					segmentDijkstra.run(sourceCandidate, lastNode);
+					List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> subPath = segmentDijkstra.getPath(lastNode);
 					LinkedList<DiGraphArc<Point2D, DoubleWeightDataWithInfo<I>>> subPathArcs = getPathArcs(subPath);
 					pathArcs.addAll(0, subPathArcs);
 					path.addAll(0, subPath);
-					lastNode = subPath.getFirst();
+					lastNode = sourceCandidate;
 					matches.addFirst(lastNode);
 					matchesArcCount.addFirst(subPathArcs.size());
 					break;
@@ -639,7 +600,7 @@ public class Matching<I> {
 		DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> t = path.getLast();
 		Dijkstra<Point2D, DoubleWeightDataWithInfo<I>> dijkstra = new Dijkstra<>(g);
 		dijkstra.run(s, t);
-		return g.toNodeList(dijkstra.getPath(t.getId()));
+		return dijkstra.getPath(t);
 	}
 
 	public ArrayList<List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>>> getShortestPathsForChunks() {
@@ -649,8 +610,7 @@ public class Matching<I> {
 			DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> s = chunk.getFirst();
 			DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>> t = chunk.getLast();
 			dijkstra.run(s.getId(), t.getId());
-			List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> shortestpath = g
-					.toNodeList(dijkstra.getPath(t.getId()));
+			List<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> shortestpath = dijkstra.getPath(t);
 			if (shortestpath.size() > 1) {
 				shortestPaths.add(shortestpath);
 			}

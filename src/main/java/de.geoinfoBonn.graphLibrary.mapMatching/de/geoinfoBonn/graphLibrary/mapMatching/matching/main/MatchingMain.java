@@ -214,6 +214,10 @@ public class MatchingMain {
 
 		// Specify output file (and delete if already exists)
 		File outputFile = new File(args[2]);
+		File outputParent = outputFile.getParentFile();
+		if (outputParent != null && !outputParent.exists() && !outputParent.mkdirs()) {
+			throw new RuntimeException("Could not create output directory: " + outputParent.getAbsolutePath());
+		}
 		if(outputFile.delete()) {
 			Logger.warn("File " + outputFile.getAbsolutePath() + " already exists. Deleting...");
 		}

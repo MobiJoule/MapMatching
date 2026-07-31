@@ -2,7 +2,6 @@ package de.geoinfoBonn.graphLibrary.mapMatching.core.shortestPath;
 
 import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 
 import de.geoinfoBonn.graphLibrary.mapMatching.core.generic.DiGraph;
@@ -20,10 +19,10 @@ import de.geoinfoBonn.graphLibrary.mapMatching.core.structures.MinHeap.HeapItem;
 public class Dijkstra<V, E> implements RoutingAlgorithm<V, E> {
 
 	protected double distToSource = 0;
-	protected double cost[];
-	protected int stamps[];
-	protected HeapItem<DiGraphNode<V, E>> items[];
-	protected DiGraphNode<V, E> pred[];
+	protected double[] cost;
+	protected int[] stamps;
+	protected HeapItem<DiGraphNode<V, E>>[] items;
+	protected DiGraphNode<V, E>[] pred;
 	protected DiGraph<V, E> graph;
 
 	protected double currentDist = 0;
@@ -172,19 +171,24 @@ public class Dijkstra<V, E> implements RoutingAlgorithm<V, E> {
 	 * path of node to the target (stored in an ArrayList from start to target).
 	 */
 	public List<DiGraphNode<V, E>> getPath(DiGraphNode<V, E> target) {
-		LinkedList<DiGraphNode<V, E>> path = new LinkedList<DiGraphNode<V, E>>();
-
 		if (stamps[target.getId()] < currentStamp) {
 			return new ArrayList<DiGraphNode<V, E>>();
 		}
 
+		int pathLength = getPredecessorPathLength(target);
+		ArrayList<DiGraphNode<V, E>> path = new ArrayList<DiGraphNode<V, E>>(pathLength);
+		for (int i = 0; i < pathLength; i++) {
+			path.add(null);
+		}
+
 		DiGraphNode<V, E> current = target;
+		int index = pathLength - 1;
 		while (current != null) {
-			path.addFirst(current);
+			path.set(index--, current);
 			current = pred[current.getId()];
 		}
 
-		return new ArrayList<DiGraphNode<V, E>>(path);
+		return path;
 	}
 
 	/**
@@ -192,40 +196,61 @@ public class Dijkstra<V, E> implements RoutingAlgorithm<V, E> {
 	 * path of node to the target (stored in an ArrayList from start to target).
 	 */
 	public List<DiGraphArc<V, E>> getPathArcs(DiGraphNode<V, E> target) {
-		LinkedList<DiGraphArc<V, E>> path = new LinkedList<>();
-
 		if (stamps[target.getId()] < currentStamp) {
 			return new ArrayList<>();
 		}
 
+		int pathLength = getPredecessorPathLength(target);
+		int arcLength = Math.max(0, pathLength - 1);
+		ArrayList<DiGraphArc<V, E>> path = new ArrayList<>(arcLength);
+		for (int i = 0; i < arcLength; i++) {
+			path.add(null);
+		}
+
 		DiGraphNode<V, E> current = target;
 		DiGraphNode<V, E> next = null;
+		int index = arcLength - 1;
 		while (current != null) {
 			if (next != null) {
-				path.addFirst(current.getFirstOutgoingArcTo(next));
+				path.set(index--, current.getFirstOutgoingArcTo(next));
 			}
 			next = current;
 			current = pred[current.getId()];
 		}
 
-		return new ArrayList<>(path);
+		return path;
 	}
 
 	@Override
 	public List<Integer> getPath(int targetId) {
-		LinkedList<Integer> path = new LinkedList<>();
-
 		if (stamps[targetId] < currentStamp) {
 			return new ArrayList<>();
 		}
 
 		DiGraphNode<V, E> current = graph.getNode(targetId);
+		int pathLength = getPredecessorPathLength(current);
+		ArrayList<Integer> path = new ArrayList<>(pathLength);
+		for (int i = 0; i < pathLength; i++) {
+			path.add(null);
+		}
+
+		int index = pathLength - 1;
 		while (current != null) {
-			path.addFirst(current.getId());
+			path.set(index--, current.getId());
 			current = pred[current.getId()];
 		}
 
-		return new ArrayList<>(path);
+		return path;
+	}
+
+	private int getPredecessorPathLength(DiGraphNode<V, E> target) {
+		int pathLength = 0;
+		DiGraphNode<V, E> current = target;
+		while (current != null) {
+			pathLength++;
+			current = pred[current.getId()];
+		}
+		return pathLength;
 	}
 
 	/**
@@ -341,8 +366,6 @@ public class Dijkstra<V, E> implements RoutingAlgorithm<V, E> {
 	 * Runs the algorithm starting at the source node using the given NodeVisitor.
 	 * Runs as long as the NodeVisitor's method visit returns true. Ignores the
 	 * graph structure; adjacencies depend on the NodeIterator.
-	 * 
-	 * @throws OutOfStreetNetworkException
 	 */
 	public boolean run(DiGraphNode<V, E> source, NodeVisitor<DiGraphNode<V, E>> visitor, NodeIterator<V, E> nit) {
 		currentStamp++;

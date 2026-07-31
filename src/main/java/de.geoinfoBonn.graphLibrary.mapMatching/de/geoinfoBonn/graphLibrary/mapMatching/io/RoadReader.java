@@ -37,7 +37,7 @@ public class RoadReader<I> {
 			if (filename.endsWith(".gpkg")) {
 
 				GeoPackage geopkg = new GeoPackage(new File(filename));
-				SimpleFeatureReader reader = geopkg.reader(geopkg.features().get(0), null, null);
+				SimpleFeatureReader reader = geopkg.reader(geopkg.features().getFirst(), null, null);
 
 				while(reader.hasNext()) {
 					SimpleFeature feature = reader.next();
@@ -108,7 +108,7 @@ public class RoadReader<I> {
 
 		try {
 			geopkg = new GeoPackage(new File(filename));
-			SimpleFeatureReader reader = geopkg.reader(geopkg.features().get(0), null, null);
+			SimpleFeatureReader reader = geopkg.reader(geopkg.features().getFirst(), null, null);
 			CoordinateReferenceSystem crs = reader.getFeatureType().getCoordinateReferenceSystem();
 			reader.close();
 			geopkg.close();

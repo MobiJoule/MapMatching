@@ -2,10 +2,7 @@ package de.geoinfoBonn.graphLibrary.mapMatching.matching;
 
 import java.awt.geom.Point2D;
 import java.io.*;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import org.tinylog.Logger;
 import java.util.stream.IntStream;
@@ -49,7 +46,7 @@ public class Track {
 	private final Integer section;
 	private final Long type;
 	private final ArrayList<Point2D> trackPoints;
-	private final ArrayList<Long> timestamps;
+	private final ArrayList<Double> timestamps;
 	private final ArrayList<Double> speeds;
 	private final ArrayList<Double> covars;
 
@@ -86,7 +83,7 @@ public class Track {
 		this.covars = null;
 	}
 
-	public Track(long id, ArrayList<Point2D> trackPoints, ArrayList<Long> timestamps, ArrayList<Double> speeds, ArrayList<Double> covars) {
+	public Track(long id, ArrayList<Point2D> trackPoints, ArrayList<Double> timestamps, ArrayList<Double> speeds, ArrayList<Double> covars) {
 		this.id = id;
 		this.subtrack = 0;
 		this.section = null;
@@ -102,7 +99,7 @@ public class Track {
 		return trackPoints;
 	}
 
-	public Long getDiffTime(int i) {
+	public Double getDiffTime(int i) {
 		return timestamps == null ? null : timestamps.get(i) - timestamps.get(i-1);
 	}
 
@@ -185,10 +182,10 @@ public class Track {
                     throw new RuntimeException(ex);
                 }
 			} else if (filename.endsWith(".csv")) {
-				Map<Long, ArrayList<Point2D>> pointMap = new HashMap<>();
-				Map<Long, ArrayList<Long>> timesMap = new HashMap<>();
-				Map<Long, ArrayList<Double>> speedMap = new HashMap<>();
-				Map<Long, ArrayList<Double>> stdevMap = new HashMap<>();
+				Map<Long, ArrayList<Point2D>> pointMap = new LinkedHashMap<>();
+				Map<Long, ArrayList<Double>> timesMap = new LinkedHashMap<>();
+				Map<Long, ArrayList<Double>> speedMap = new LinkedHashMap<>();
+				Map<Long, ArrayList<Double>> stdevMap = new LinkedHashMap<>();
 
 				try (Reader reader = new FileReader(filename);
 					 CSVParser csvParser = new CSVParser(reader,
@@ -196,7 +193,7 @@ public class Track {
 
 					 for (CSVRecord record : csvParser) {
 						 long id = Long.parseLong(record.get("id"));
-						 long t = Long.parseLong(record.get("t"));
+						 double t = Double.parseDouble(record.get("t"));
 						 double x = Double.parseDouble(record.get("x"));
 						 double y = Double.parseDouble(record.get("y"));
 						 double v = Double.parseDouble(record.get("v"));

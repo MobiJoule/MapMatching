@@ -43,17 +43,17 @@ public class DiGraph<V, E> implements VisitableGraph<V, E>, Serializable {
 		/**
 		 * list of every outgoing arc
 		 */
-		private List<DiGraphArc<V, E>> outgoingArcs;
+		private final List<DiGraphArc<V, E>> outgoingArcs;
 
 		/**
 		 * list of every incoming arc
 		 */
-		private List<DiGraphArc<V, E>> incomingArcs;
+		private final List<DiGraphArc<V, E>> incomingArcs;
 		/**
 		 * NodeData of the DiGraphNode
 		 * 
 		 */
-		private V nodeData;
+		private final V nodeData;
 
 		/**
 		 * id increases by every addition of a node to the DiGraph
@@ -67,8 +67,8 @@ public class DiGraph<V, E> implements VisitableGraph<V, E>, Serializable {
 		 * @param id       -
 		 */
 		private DiGraphNode(V nodeData, int id) {
-			outgoingArcs = new ArrayList<DiGraphArc<V, E>>();
-			incomingArcs = new ArrayList<DiGraphArc<V, E>>();
+			outgoingArcs = new ArrayList<>();
+			incomingArcs = new ArrayList<>();
 			this.nodeData = nodeData;
 			this.id = id;
 		}
@@ -205,12 +205,12 @@ public class DiGraph<V, E> implements VisitableGraph<V, E>, Serializable {
 		/**
 		 * source node of the arc
 		 */
-		private DiGraphNode<V, E> source;
+		private final DiGraphNode<V, E> source;
 
 		/**
 		 * target node of the arc
 		 */
-		private DiGraphNode<V, E> target;
+		private final DiGraphNode<V, E> target;
 
 		/**
 		 * for adding extra information on the arc (e.g. length)
@@ -310,9 +310,9 @@ public class DiGraph<V, E> implements VisitableGraph<V, E>, Serializable {
 		}
 
 		public double getInclination(boolean swapping) {
-			double inc = 0;
-			double Y = 0;
-			double X = 0;
+			double inc;
+			double Y;
+			double X;
 
 			if (swapping) {
 				Y = ((Point2D) this.source.nodeData).getY() - ((Point2D) this.target.nodeData).getY();
@@ -357,8 +357,8 @@ public class DiGraph<V, E> implements VisitableGraph<V, E>, Serializable {
 	 * Default-constructor Generates empty graph
 	 */
 	public DiGraph() {
-		nodeList = new ArrayList<DiGraphNode<V, E>>();
-		arcList = new ArrayList<DiGraphArc<V, E>>();
+		nodeList = new ArrayList<>();
+		arcList = new ArrayList<>();
 	}
 
 	/**
@@ -369,8 +369,8 @@ public class DiGraph<V, E> implements VisitableGraph<V, E>, Serializable {
 	 * @param arcData - array with arc data
 	 */
 	public DiGraph(V[] nodes, boolean[][] arcs, E[][] arcData) {
-		nodeList = new ArrayList<DiGraphNode<V, E>>();
-		arcList = new ArrayList<DiGraphArc<V, E>>();
+		nodeList = new ArrayList<>();
+		arcList = new ArrayList<>();
 		for (V v : nodes) {
 			addNode(v);
 		}
@@ -390,7 +390,7 @@ public class DiGraph<V, E> implements VisitableGraph<V, E>, Serializable {
 	 * @return added DiGraphNode
 	 */
 	public DiGraphNode<V, E> addNode(V nodeInfo) {
-		DiGraphNode<V, E> v = new DiGraphNode<V, E>(nodeInfo, nodeList.size());
+		DiGraphNode<V, E> v = new DiGraphNode<>(nodeInfo, nodeList.size());
 		nodeList.add(v);
 		return v;
 	}
@@ -404,7 +404,7 @@ public class DiGraph<V, E> implements VisitableGraph<V, E>, Serializable {
 	 * @return added DiGraphArc
 	 */
 	public DiGraphArc<V, E> addArc(DiGraphNode<V, E> v1, DiGraphNode<V, E> v2, E edgeData) {
-		DiGraphArc<V, E> a = new DiGraphArc<V, E>(v1, v2, edgeData, arcList.size());
+		DiGraphArc<V, E> a = new DiGraphArc<>(v1, v2, edgeData, arcList.size());
 		v1.outgoingArcs.add(a);
 		v2.incomingArcs.add(a);
 		arcList.add(a);
@@ -416,7 +416,7 @@ public class DiGraph<V, E> implements VisitableGraph<V, E>, Serializable {
 	}
 
 	public List<DiGraphArc<V, E>> addDoubleArc(DiGraphNode<V, E> v1, DiGraphNode<V, E> v2, E edgeData) {
-		List<DiGraphArc<V, E>> result = new ArrayList<DiGraphArc<V, E>>();
+		List<DiGraphArc<V, E>> result = new ArrayList<>();
 		result.add(addArc(v1, v2, edgeData));
 		result.add(addArc(v2, v1, edgeData));
 		return result;
@@ -494,7 +494,7 @@ public class DiGraph<V, E> implements VisitableGraph<V, E>, Serializable {
 	}
 
 	public List<DiGraphNode<V, E>> toNodeList(List<Integer> idList) {
-		List<DiGraphNode<V, E>> list = new LinkedList<>();
+		List<DiGraphNode<V, E>> list = new ArrayList<>(idList.size());
 		for (int id : idList) {
 			list.add(this.getNode(id));
 		}
@@ -502,7 +502,7 @@ public class DiGraph<V, E> implements VisitableGraph<V, E>, Serializable {
 	}
 
 	public List<DiGraphArc<V, E>> toArcList(List<Integer> idList) {
-		List<DiGraphArc<V, E>> list = new LinkedList<>();
+		List<DiGraphArc<V, E>> list = new ArrayList<>(idList.size());
 		for (int id : idList) {
 			list.add(this.getArc(id));
 		}
@@ -618,8 +618,8 @@ public class DiGraph<V, E> implements VisitableGraph<V, E>, Serializable {
 		// throw new RuntimeException("Cannot find outer Arc. No geometric
 		// information.");
 		// }
-		return nodeList.get(0).getIncomingArcs().get(0);
-		// return nodeList.get(0).getOutgoingArcs().get(0);
+		return nodeList.getFirst().getIncomingArcs().getFirst();
+		// return nodeList.getFirst().getOutgoingArcs().getFirst();
 	}
 
 	/**
@@ -628,7 +628,7 @@ public class DiGraph<V, E> implements VisitableGraph<V, E>, Serializable {
 	 * @param nodeToBeRemoved - DiGraphNode that will be removed from the DiGraph
 	 */
 	public void removeNode(DiGraphNode<V, E> nodeToBeRemoved) {
-		HashSet<DiGraphArc<V, E>> arcsToBeRemoved = new HashSet<DiGraphArc<V, E>>();
+		HashSet<DiGraphArc<V, E>> arcsToBeRemoved = new HashSet<>();
 		arcsToBeRemoved.addAll(nodeToBeRemoved.incomingArcs);
 		arcsToBeRemoved.addAll(nodeToBeRemoved.outgoingArcs);
 		this.removeArcs(arcsToBeRemoved);
@@ -657,7 +657,7 @@ public class DiGraph<V, E> implements VisitableGraph<V, E>, Serializable {
 	 * @return List of DiGraphArcs visited in the path
 	 */
 	public LinkedList<DiGraphArc<V, E>> getPathArcs(List<DiGraphNode<V, E>> pathNodes) {
-		LinkedList<DiGraphArc<V, E>> pathArcs = new LinkedList<DiGraphArc<V, E>>();
+		LinkedList<DiGraphArc<V, E>> pathArcs = new LinkedList<>();
 		DiGraphNode<V, E> u = null;
 		for (DiGraphNode<V, E> v : pathNodes) {
 			if (u != null) {
