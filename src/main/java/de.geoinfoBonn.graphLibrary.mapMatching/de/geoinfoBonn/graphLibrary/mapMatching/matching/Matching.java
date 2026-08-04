@@ -483,7 +483,7 @@ public class Matching<I> {
 
 				// Reduce size of adopted candidates list to be within limit
 				if (allowed_insertions <= 0) {
-					Logger.warn("Candidates for track point " + i + " exceed allowed amount (" + original_candidates + ")\n" +
+					Logger.debug("Candidates for track point " + i + " exceed allowed amount (" + original_candidates + ")\n" +
 							"You have a dense network. Consider increasing candidate allowance with input option '-k' (currently " + MAX_CAND_N + ").");
 				} else if (adoptedCandidates.size() > allowed_insertions) {
 
@@ -516,12 +516,6 @@ public class Matching<I> {
 		return allCandidates;
 	}
 
-	/**
-	 * 
-	 * @param segments
-	 * @param gps_point
-	 * @return
-	 */
 	private LinkedList<CandidateMatch<I>> getBestKCandidatesForTrackPoint(STRtree segments, Point2D gps_point) {
 		LinkedList<CandidateMatch<I>> candidates = new LinkedList<>();
 
