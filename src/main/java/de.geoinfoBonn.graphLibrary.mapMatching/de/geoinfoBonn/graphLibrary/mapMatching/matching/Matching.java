@@ -231,6 +231,9 @@ public class Matching<I> {
 
 			// Compute expected distance if speeds are available
 			Double dt = input_track.getDiffTime(i+1);
+			if (DEVIATION_PENALTY_FACTOR > 0 && dt == null) {
+				throw new RuntimeException("Cannot assess deviation penalties without 'dt' attribute in matching input!" + i);
+			}
 
 			// define targets
 			LinkedList<DiGraphNode<Point2D, DoubleWeightDataWithInfo<I>>> targets = new LinkedList<>();
@@ -270,14 +273,14 @@ public class Matching<I> {
 				double deviation_penalty = 0.;
 				double distance_penalty = 0.;
 
-				// DEVIATION PENALTY (FOR SMOOTHED TRAJECTORIES ONLY)
-				if (dt != null) {
+				// DEVIATION & DISTANCE PENALTY FACTORS
+				if (DEVIATION_PENALTY_FACTOR > 0. || DISTANCE_PENALTY_FACTOR > 0.) {
 
 					// X and Y components of next match vector
 					double bx = nextMatch.getX() - nextPoint.getX();
 					double by = nextMatch.getY() - nextPoint.getY();
 
-					// Network distance distance
+					// Network distance
 					double networkDistance = pathArcs.stream().mapToDouble(
 							a -> a.getArcData().getValue() /
 									((RoadInfo) a.getArcData().getInfo()).getWeightAdjustment()).sum();
@@ -317,14 +320,16 @@ public class Matching<I> {
 						// Perpendicular and parallel components
 						diff_parallel = Math.abs(a2 - bp2);
 						diff_perpendicular = Math.abs(br2);
-
-						// Network vs euclidean distance
 						diff_network = Math.abs(networkDistanceSq - euclideanDistanceSq);
 
 					}
 
-					deviation_penalty = (diff_parallel + diff_perpendicular) * CANDIDATE_COST_WEIGHT * DEVIATION_PENALTY_FACTOR / dt;
-					distance_penalty = diff_network * CANDIDATE_COST_WEIGHT * DISTANCE_PENALTY_FACTOR;
+					if (DEVIATION_PENALTY_FACTOR > 0) {
+						deviation_penalty = (diff_parallel + diff_perpendicular) * CANDIDATE_COST_WEIGHT * DEVIATION_PENALTY_FACTOR / dt;
+					}
+					if (DISTANCE_PENALTY_FACTOR > 0) {
+						distance_penalty = diff_network * CANDIDATE_COST_WEIGHT * DISTANCE_PENALTY_FACTOR;
+					}
 				}
 
 				// Update cost
